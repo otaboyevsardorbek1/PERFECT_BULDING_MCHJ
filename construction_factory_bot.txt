@@ -1,0 +1,48 @@
+construction_factory_bot/
+├── 📁 alembic/                    # Database migratsiyalari
+│   ├── versions/                  # Migratsiya fayllari
+│   └── env.py                     # Migratsiya muhiti
+├── 📁 backups/                    # Backup fayllari
+├── 📁 database/                   # Database modullari
+│   ├── __init__.py
+│   ├── models.py                  # SQLAlchemy modellari
+│   ├── crud.py                    # CRUD operatsiyalari
+│   ├── session.py                 # Database sessiyasi
+│   └── alembic_versions.py        # Migratsiya versiyalari
+├── 📁 handlers/                   # Bot handlerlari
+│   ├── __init__.py
+│   ├── start.py                   # Start handler
+│   ├── warehouse.py               # Ombor handler
+│   ├── production.py              # Ishlab chiqarish handler
+│   ├── reports.py                 # Hisobotlar handler
+│   ├── admin.py                   # Admin paneli
+│   ├── employees.py               # Xodimlar handler
+│   ├── notifications.py           # Bildirishnomalar handler
+│   └── sales.py                   # Sotuvlar handler
+├── 📁 keyboards/                  # Klaviatura modullari
+│   ├── __init__.py
+│   ├── main_menu.py               # Asosiy menyu
+│   ├── admin_menu.py              # Admin menyusi
+│   └── inline_keyboards.py        # Inline tugmalar
+├── 📁 logs/                       # Log fayllari
+├── 📁 reports/                    # Hisobotlar
+│   ├── excel/                     # Excel hisobotlar
+│   └── charts/                    # Grafiklar
+├── 📁 static/                     # Statik fayllar
+│   └── images/                    # Rasmlar
+├── 📁 utils/                      # Yordamchi funksiyalar
+│   ├── __init__.py
+│   ├── formulas.py                # Mahsulot formulalari
+│   ├── calculations.py            # Hisob-kitoblar
+│   ├── excel_reports.py           # Excel hisobotlar
+│   ├── charts.py                  # Grafik yaratish
+│   ├── notifications.py           # Push bildirishnomalar
+│   └── helpers.py                 # Yordamchi funksiyalar
+├── .env                           # Konfiguratsiya (shaxsiy)
+├── .env.example                   # Konfiguratsiya namunasi
+├── .gitignore                     # Git ignore
+├── alembic.ini                    # Alembic konfiguratsiyasi
+├── config.py                      # Asosiy konfiguratsiya
+├── main.py                        # Asosiy fayl
+├── README.md                      # Loyiha haqida ma'lumot
+└── requirements.txt               # Kutubxonalar ro'yxati
