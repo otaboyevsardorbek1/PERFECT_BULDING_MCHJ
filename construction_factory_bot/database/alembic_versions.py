@@ -1,1 +1,0 @@
-# Migratsiya versiyalari
