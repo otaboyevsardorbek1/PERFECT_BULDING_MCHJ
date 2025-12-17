@@ -13,16 +13,14 @@ class DatabaseManager:
     def create_tables(self):
         # Xom ashyolar jadvali
         self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS raw_materials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            unit TEXT NOT NULL,
-            current_stock REAL DEFAULT 0,
-            min_stock REAL DEFAULT 0,
-            price_per_unit REAL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
+            CREATE TABLE IF NOT EXISTS raw_materials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                unit TEXT NOT NULL,
+                current_stock REAL DEFAULT 0,
+                min_stock REAL DEFAULT 0,
+                price_per_unit REAL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
         # Mahsulotlar jadvali
         self.cursor.execute('''

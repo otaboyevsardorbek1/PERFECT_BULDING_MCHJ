@@ -133,7 +133,7 @@ def create_salary_payment(db: Session, salary_data: Dict) -> models.SalaryPaymen
     db.refresh(payment)
     return payment
 
-def get_employee_salary_payments(db: Session, employee_id: int, year: int = None, month: int = None) -> List[models.SalaryPayment]:
+def get_employee_salary_payments(db: Session, employee_id: int, year: int = None, month: int = None) -> List[models.SalaryPayment]: # type: ignore
     """Xodimning maosh to'lovlarini olish"""
     query = db.query(models.SalaryPayment).filter(
         models.SalaryPayment.employee_id == employee_id
@@ -181,7 +181,7 @@ def get_production_statistics(db: Session, start_date: date, end_date: date) -> 
     ).all()
     
     total_orders = len(orders)
-    completed_orders = len([o for o in orders if o.status == models.OrderStatus.COMPLETED])
+    completed_orders = len([o for o in orders if o.status == models.OrderStatus.COMPLETED]) # type: ignore
     total_quantity = sum([o.quantity for o in orders])
     total_cost = sum([o.total_cost or 0 for o in orders])
     total_revenue = sum([o.total_revenue or 0 for o in orders])
@@ -231,7 +231,7 @@ def get_financial_statistics(db: Session, start_date: date, end_date: date) -> D
         "salary_costs": salary_costs,
         "total_costs": total_costs,
         "net_profit": net_profit,
-        "profit_margin": (net_profit / total_sales_amount * 100) if total_sales_amount > 0 else 0
+        "profit_margin": (net_profit / total_sales_amount * 100) if total_sales_amount > 0 else 0  # type: ignore
     }
 
 # =============== Bildirishnomalar CRUD ===============
@@ -257,8 +257,8 @@ def mark_notification_sent(db: Session, notification_id: int) -> bool:
     """Bildirishnomani yuborilgan deb belgilash"""
     notification = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
     if notification:
-        notification.status = models.NotificationStatus.SENT
-        notification.sent_time = datetime.utcnow()
+        notification.status = models.NotificationStatus.SENT # type: ignore
+        notification.sent_time = datetime.utcnow() # type: ignore
         db.commit()
         return True
     return False

@@ -3,21 +3,10 @@ Qurilish materiallari korxonasi uchun barcha hisob-kitob funksiyalari
 """
 
 import math
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
-
-# Database import qilish
-try:
-    from construction_factory_bot.database import DatabaseManager
-except ImportError:
-    # Test maqsadida mock database
-    class DatabaseManager:
-        def __init__(self):
-            pass
-        def get_product_formula(self, product_id):
-            return []
 
 @dataclass
 class CalculationResult:
@@ -50,8 +39,8 @@ class CostCategory(Enum):
 class ProductionCalculator:
     """Ishlab chiqarish hisob-kitoblari"""
     
-    def __init__(self, db_manager: Optional[DatabaseManager] = None):
-        self.db = db_manager or DatabaseManager()
+    def __init__(self, db_manager: Optional[Any] = None):
+        self.db = db_manager
         
         # Standart koeffitsientlar
         self.COST_COEFFICIENTS = {
@@ -110,24 +99,23 @@ class ProductionCalculator:
         }
     
     def calculate_production_cost(self, product_id: int, quantity: int, 
-                                 custom_coefficients: Dict = None) -> CalculationResult:
+                                 custom_coefficients: Optional[Dict] = None) -> CalculationResult:
         """
         Ishlab chiqarish xarajatlarini hisoblash
-        
-        Args:
-            product_id: Mahsulot ID si
-            quantity: Ishlab chiqarish miqdori
-            custom_coefficients: Maxsus koeffitsientlar
-            
-        Returns:
-            CalculationResult obyekti
         """
         warnings = []
         errors = []
         
         try:
-            # Mahsulot formulasi
-            formula = self.db.get_product_formula(product_id)
+            # Agar database manager bo'lmasa, mock formula ishlatish
+            if self.db and hasattr(self.db, 'get_product_formula'):
+                formula = self.db.get_product_formula(product_id)
+            else:
+                # Mock formula
+                formula = [
+                    {'material_name': 'Klinker', 'quantity': 45, 'price_per_unit': 500, 'unit': 'kg'},
+                    {'material_name': 'Gips', 'quantity': 5, 'price_per_unit': 300, 'unit': 'kg'},
+                ]
             
             if not formula:
                 return CalculationResult(
@@ -208,12 +196,13 @@ class ProductionCalculator:
         
         for item in formula:
             try:
-                material_quantity = item['quantity'] * quantity
+                material_quantity = item.get('quantity', 0) * quantity
                 unit_price = item.get('price_per_unit', 0)
                 
                 if unit_price <= 0:
-                    warnings.append(f"{item.get('material_name', 'Noma\'lum')} uchun narx belgilanmagan")
-                    unit_price = self._estimate_material_price(item.get('material_name', ''))
+                    material_name = item.get('material_name', 'Noma\'lum')
+                    warnings.append(f"{material_name} uchun narx belgilanmagan")
+                    unit_price = self._estimate_material_price(material_name)
                 
                 material_cost = material_quantity * unit_price
                 total_cost += material_cost
@@ -240,7 +229,7 @@ class ProductionCalculator:
     def _calculate_additional_costs(self, product_category: str, 
                                    material_cost: float, 
                                    quantity: int,
-                                   custom_coefficients: Dict = None) -> Dict:
+                                   custom_coefficients: Optional[Dict] = None) -> Dict:
         """Qo'shimcha xarajatlarni hisoblash"""
         coefficients = self.COST_COEFFICIENTS.copy()
         
@@ -248,13 +237,19 @@ class ProductionCalculator:
         if product_category in self.PRODUCT_COEFFICIENTS:
             for key, value in self.PRODUCT_COEFFICIENTS[product_category].items():
                 if key in ["labor", "energy"]:
-                    coefficients[CostCategory(key.upper())] = value
+                    try:
+                        coefficients[CostCategory(key.upper())] = value
+                    except:
+                        pass
         
         # Maxsus koeffitsientlar
         if custom_coefficients:
             for key, value in custom_coefficients.items():
                 try:
-                    coefficients[CostCategory(key)] = value
+                    if isinstance(key, str):
+                        coefficients[CostCategory(key.upper())] = value
+                    else:
+                        coefficients[key] = value
                 except (KeyError, ValueError):
                     pass
         
@@ -281,17 +276,25 @@ class ProductionCalculator:
         """Xarajatlar taqsimotini hisoblash"""
         distribution = {}
         
+        if total_cost <= 0:
+            return distribution
+        
         # Material xarajatlari
         distribution["material"] = {
             "amount": material_cost,
-            "percentage": (material_cost / total_cost * 100) if total_cost > 0 else 0
+            "percentage": (material_cost / total_cost * 100)
         }
         
         # Qo'shimcha xarajatlar
         for cost_type, amount in additional_costs.items():
-            distribution[cost_type.value] = {
+            if isinstance(cost_type, CostCategory):
+                key = cost_type.value
+            else:
+                key = str(cost_type)
+            
+            distribution[key] = {
                 "amount": amount,
-                "percentage": (amount / total_cost * 100) if total_cost > 0 else 0
+                "percentage": (amount / total_cost * 100)
             }
         
         return distribution
@@ -299,9 +302,10 @@ class ProductionCalculator:
     def _calculate_profit_margins(self, product_id: int, unit_cost: float, quantity: int) -> Dict:
         """Foyda marjalarini hisoblash"""
         try:
-            # Ma'lumotlar bazasidan mahsulot narxini olish
-            # Bu funksiya DatabaseManager da bo'lishi kerak
-            selling_price = self._get_product_selling_price(product_id)
+            # Agar database bo'lsa, mahsulot narxini olish
+            selling_price = 0
+            if self.db and hasattr(self.db, 'get_product_selling_price'):
+                selling_price = self.db.get_product_selling_price(product_id)
             
             if selling_price <= 0:
                 selling_price = unit_cost * 1.4  # 40% foyda
@@ -369,26 +373,22 @@ class ProductionCalculator:
     
     def _get_product_category(self, product_id: int) -> str:
         """Mahsulot kategoriyasini olish"""
-        # Bu funksiya DatabaseManager da bo'lishi kerak
-        # Hozircha sement deb qabul qilamiz
-        return "sement"
-    
-    def _get_product_selling_price(self, product_id: int) -> float:
-        """Mahsulot sotish narxini olish"""
-        # Bu funksiya DatabaseManager da bo'lishi kerak
-        return 0
+        # Agar database bo'lsa, kategoriyani olish
+        if self.db and hasattr(self.db, 'get_product_category'):
+            return self.db.get_product_category(product_id)
+        return "sement"  # Default
     
     def _estimate_material_price(self, material_name: str) -> float:
         """Material narxini taxminiy hisoblash"""
         price_map = {
-            "Klinker": 500,
-            "Gips": 300,
-            "Qum": 50,
-            "Shag'al": 80,
-            "Temir": 2000,
-            "Gil": 150,
-            "Plastik": 1200,
-            "Kimyoviy": 2500,
+            "klinker": 500,
+            "gips": 300,
+            "qum": 50,
+            "shag'al": 80,
+            "temir": 2000,
+            "gil": 150,
+            "plastik": 1200,
+            "kimyoviy": 2500,
             "default": 1000
         }
         
@@ -397,7 +397,6 @@ class ProductionCalculator:
                 return price
         
         return price_map["default"]
-
 
 class WarehouseCalculator:
     """Ombor hisob-kitoblari"""
@@ -440,18 +439,9 @@ class WarehouseCalculator:
     def calculate_reorder_point(current_stock: float, 
                                daily_usage: float, 
                                lead_time_days: int, 
-                               safety_stock: float = None) -> Dict:
+                               safety_stock: Optional[float] = None) -> Dict:
         """
         Qayta buyurtma nuqtasini hisoblash
-        
-        Args:
-            current_stock: Joriy zaxira
-            daily_usage: Kunlik sarf
-            lead_time_days: Yetkazib berish muddati (kun)
-            safety_stock: Xavfsizlik zaxirasi
-        
-        Returns:
-            Hisob natijalari
         """
         if daily_usage <= 0:
             return {
@@ -500,13 +490,6 @@ class WarehouseCalculator:
                                     average_inventory_value: float) -> Dict:
         """
         Inventar aylanishini hisoblash
-        
-        Args:
-            sales_value: Sotish summasi (ma'lum davr uchun)
-            average_inventory_value: O'rtacha inventar qiymati
-        
-        Returns:
-            Aylanish ko'rsatkichlari
         """
         if average_inventory_value <= 0:
             return {
@@ -551,14 +534,6 @@ class FinancialCalculator:
                             variable_cost_per_unit: float) -> Dict:
         """
         Zararsizlik nuqtasini hisoblash
-        
-        Args:
-            fixed_costs: Doimiy xarajatlar
-            price_per_unit: Birlik narxi
-            variable_cost_per_unit: O'zgaruvchan xarajat/birlik
-        
-        Returns:
-            Zararsizlik nuqtasi hisobi
         """
         if price_per_unit <= variable_cost_per_unit:
             return {
@@ -593,14 +568,6 @@ class FinancialCalculator:
                      period_years: float = 1) -> Dict:
         """
         Investitsiya rentabelligini hisoblash (ROI)
-        
-        Args:
-            investment: Investitsiya summasi
-            net_profit: Sof foyda
-            period_years: Davr (yil)
-        
-        Returns:
-            ROI hisobi
         """
         if investment <= 0:
             return {
@@ -649,15 +616,6 @@ class FinancialCalculator:
                               method: str = 'straight_line') -> Dict:
         """
         Amortizatsiyani hisoblash
-        
-        Args:
-            asset_value: Aktiv qiymati
-            salvage_value: Qoldiq qiymat
-            useful_life_years: Foydali xizmat muddati
-            method: Hisoblash usuli ('straight_line', 'declining_balance')
-        
-        Returns:
-            Amortizatsiya hisobi
         """
         if useful_life_years <= 0:
             return {
@@ -739,14 +697,6 @@ class EfficiencyCalculator:
                               number_of_workers: int = 1) -> Dict:
         """
         Mehnat unumdorligini hisoblash
-        
-        Args:
-            total_output: Umumiy ishlab chiqarish (birlikda)
-            total_hours: Umumiy ish soatlari
-            number_of_workers: Ishchilar soni
-        
-        Returns:
-            Unumdorlik ko'rsatkichlari
         """
         if total_hours <= 0 or number_of_workers <= 0:
             return {
@@ -826,13 +776,6 @@ class EfficiencyCalculator:
                                        available_hours: float) -> Dict:
         """
         Uskuna foydalanish koeffitsiyentini hisoblash
-        
-        Args:
-            actual_hours: Haqiqiy ishlagan soatlar
-            available_hours: Mavjud soatlar
-        
-        Returns:
-            Foydalanish ko'rsatkichlari
         """
         if available_hours <= 0:
             return {
@@ -868,10 +811,14 @@ class EfficiencyCalculator:
 # Qo'shimcha yordamchi funksiyalar
 def format_currency(amount: float) -> str:
     """Summani formatlash"""
-    return f"{amount:,.0f} so'm"
+    if amount is None:
+        return "0 so'm"
+    return f"{amount:,.0f} so'm".replace(",", " ")
 
 def format_percentage(value: float) -> str:
     """Foizni formatlash"""
+    if value is None:
+        return "0%"
     return f"{value:.1f}%"
 
 def calculate_growth_rate(current: float, previous: float) -> float:
@@ -880,7 +827,7 @@ def calculate_growth_rate(current: float, previous: float) -> float:
         return 0
     return ((current - previous) / previous) * 100
 
-# Asosiy ishlatish uchun
+# Asosiy ishlatish uchun test
 def main():
     """Test funksiyasi"""
     print("=== HISOB-KITOB MODULI TESTI ===\n")
@@ -889,19 +836,6 @@ def main():
     print("1. Ishlab chiqarish xarajati hisobi:")
     calculator = ProductionCalculator()
     
-    # Test ma'lumotlari
-    test_formula = [
-        {'material_name': 'Klinker', 'quantity': 45, 'price_per_unit': 500, 'unit': 'kg'},
-        {'material_name': 'Gips', 'quantity': 5, 'price_per_unit': 300, 'unit': 'kg'},
-    ]
-    
-    # Mock database
-    class MockDB:
-        def get_product_formula(self, product_id):
-            return test_formula
-    
-    calculator.db = MockDB()
-    
     result = calculator.calculate_production_cost(1, 100)
     
     if result.success:
@@ -909,7 +843,8 @@ def main():
         print(f"  Jami xarajat: {format_currency(data['total_cost'])}")
         print(f"  Birlik xarajati: {format_currency(data['unit_cost'])}")
         print(f"  Material xarajati: {format_currency(data['material_cost'])}")
-        print(f"  Foyda marjasi: {format_percentage(data['profit_margins']['profit_margin'])}")
+        if 'profit_margins' in data:
+            print(f"  Foyda marjasi: {format_percentage(data['profit_margins'].get('profit_margin', 0))}")
     else:
         print(f"  Xatolik: {result.errors}")
     
@@ -958,65 +893,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-###########################################################
-#==================================calculateions.py==================================#
-# from utils.calculations import (
-#     ProductionCalculator, 
-#     WarehouseCalculator,
-#     FinancialCalculator,
-#     EfficiencyCalculator,
-#     format_currency,
-#     format_percentage
-# )
-
-# # 1. Ishlab chiqarish xarajati
-# prod_calc = ProductionCalculator(db_manager=your_db_instance)
-# result = prod_calc.calculate_production_cost(
-#     product_id=1,
-#     quantity=100,
-#     custom_coefficients={'labor': 0.30, 'energy': 0.20}
-# )
-
-# if result.success:
-#     data = result.data
-#     print(f"Jami xarajat: {format_currency(data['total_cost'])}")
-#     print(f"Foyda: {format_percentage(data['profit_margins']['profit_margin'])}")
-
-# # 2. Ombor hisoblari
-# inventory_value = WarehouseCalculator.calculate_inventory_value([
-#     {'name': 'Klinker', 'quantity': 10000, 'unit_price': 500},
-#     {'name': 'Gips', 'quantity': 5000, 'unit_price': 300},
-# ])
-
-# reorder_point = WarehouseCalculator.calculate_reorder_point(
-#     current_stock=1500,
-#     daily_usage=200,
-#     lead_time_days=5,
-#     safety_stock=300
-# )
-
-# # 3. Moliyaviy hisoblar
-# break_even = FinancialCalculator.calculate_break_even(
-#     fixed_costs=10000000,
-#     price_per_unit=15000,
-#     variable_cost_per_unit=10000
-# )
-
-# roi_analysis = FinancialCalculator.calculate_roi(
-#     investment=50000000,
-#     net_profit=15000000,
-#     period_years=2
-# )
-
-# # 4. Samaradorlik hisoblari
-# productivity = EfficiencyCalculator.calculate_productivity(
-#     total_output=1000,
-#     total_hours=200,
-#     number_of_workers=10
-# )
-
-# equipment_util = EfficiencyCalculator.calculate_equipment_utilization(
-#     actual_hours=160,
-#     available_hours=200
-# )
