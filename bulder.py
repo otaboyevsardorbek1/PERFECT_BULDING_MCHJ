@@ -1,14 +1,3 @@
-#!/usr/bin/env python3
-# universal_project_generator.py
-"""
-Mukammal loyiha generatori:
-- JSON / YAML / TREE formatlarini qo‘llab-quvvatlaydi
-- TREE formatdagi # comment va emoji ishlatilsa ham to‘g‘ri ajratadi
-- Faylga commentni avtomatik yozadi
-- Root papka ichida to‘liq struktura yaratadi
-- JSON/YAML/TREE sample fayllarini avtomatik yaratadi
-"""
-
 import json
 from pathlib import Path
 import sys
