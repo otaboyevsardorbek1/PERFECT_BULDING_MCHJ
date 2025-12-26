@@ -77,7 +77,7 @@ async def show_warehouse_status(message: types.Message):
 
 async def add_raw_material_start(message: types.Message):
     """Yangi xom ashyo qo'shishni boshlash"""
-    await message.answer("Yangi xom ashyo nomini kiriting:", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Yangi xom ashyo nomini kiriting:", reply_markup=ReplyKeyboardRemove()) # type: ignore
     await WarehouseStates.waiting_material_name.set()
 
 async def process_material_name(message: types.Message, state: FSMContext):
@@ -149,7 +149,7 @@ async def confirm_add_material(callback_query: types.CallbackQuery, state: FSMCo
     await state.finish()
 
 def register_handlers_warehouse(dp: Dispatcher):
-    """Register warehouse handlers"""
+    #-- """Register warehouse handlers"""
     dp.register_message_handler(show_warehouse_status, lambda msg: msg.text == "📦 Ombor holati", state="*")
     dp.register_message_handler(add_raw_material_start, lambda msg: msg.text == "➕ Xom ashyo kiritish", state="*")
     

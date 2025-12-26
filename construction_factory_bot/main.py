@@ -12,8 +12,8 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from aiogram import Bot, Dispatcher
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher.middlewares import BaseMiddleware
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import BaseMiddleware
 from aiogram.types import Update
 
 from config import BOT_TOKEN, ADMIN_IDS, DB_NAME
@@ -51,7 +51,7 @@ class LoggingMiddleware(BaseMiddleware):
         """Update dan oldin"""
         if update.message:
             user = update.message.from_user
-            logger.info(f"User {user.id} ({user.username}): {update.message.text}")
+            logger.info(f"User {user.id} ({user.username}): {update.message.text}") # type: ignore
         
         elif update.callback_query:
             user = update.callback_query.from_user
@@ -65,11 +65,11 @@ class LoggingMiddleware(BaseMiddleware):
 class DatabaseMiddleware(BaseMiddleware):
     """Har bir handler uchun database sessiyasini taqdim etish"""
     
-    async def on_pre_process_message(self, message: types.Message, data: dict):
+    async def on_pre_process_message(self, message: types.Message, data: dict):# type: ignore
         """Message dan oldin"""
         data['db'] = get_db_session()
     
-    async def on_post_process_message(self, message: types.Message, result, data: dict):
+    async def on_post_process_message(self, message: types.Message, result, data: dict):# type: ignore
         """Message dan keyin"""
         if 'db' in data:
             data['db'].close()
@@ -103,7 +103,7 @@ async def on_startup(dp: Dispatcher):
     await initialize_database()
     
     # Adminlarga bot ishga tushganligi haqida xabar
-    await send_startup_message(dp.bot)
+    await send_startup_message(dp.bot)# type: ignore
     
     # Background tasklarni boshlash
     asyncio.create_task(notification_background_task())

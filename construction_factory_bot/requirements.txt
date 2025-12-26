@@ -1,53 +1,93 @@
-# Core
-aiogram==2.25.1
-# aiogram-dispatcher==0.3.1
+# ============ ASOSIY KUTUBXONALAR ============
+
+# Aiogram v3.22 - Telegram bot framework
+aiogram==3.22.0
+
+# Konfiguratsiya
 python-dotenv==1.0.0
 
-# Database
+# ============ DATABASE ============
+
+# SQLAlchemy ORM
 sqlalchemy==2.0.23
 alembic==1.12.1
-psycopg2-binary==2.9.9
-asyncpg==0.29.0
-aiosqlite==0.19.0
+psycopg2-binary==2.9.9          # PostgreSQL uchun
+aiosqlite==0.19.0               # SQLite uchun (agar kerak bo'lsa)
+asyncpg==0.29.0                 # Async PostgreSQL (agar kerak bo'lsa)
 
-# Excel and Reports
-pandas==2.1.4
-openpyxl==3.1.2
-xlsxwriter==3.1.9
-reportlab==4.0.4
-xlrd==2.0.1
+# ============ HISOBOT VA EXCEL ============
 
-# Charts and Visualization
-matplotlib==3.8.2
-seaborn==0.13.0
-plotly==5.18.0
+# Excel fayllar bilan ishlash
+openpyxl==3.1.2                 # .xlsx fayllar uchun (asosiy)
+pandas==2.1.4                   # Data analysis (agar kerak bo'lsa)
+xlsxwriter==3.1.9               # Excel yozish uchun
 
-# Date and Time
+# ============ RASM VA VIZUALIZATSIYA ============
+
+# Rasm qayta ishlash
+Pillow==10.1.0                  # Image processing
+
+# Grafiklar va diagrammalar
+matplotlib==3.8.2               # Asosiy grafiklar
+seaborn==0.13.0                 # Statistik grafiklar (agar kerak bo'lsa)
+
+# ============ SANALAR VA VAQT ============
+
+# Sana va vaqt bilan ishlash
 python-dateutil==2.8.2
 pytz==2023.3
-arrow==1.3.0
 
-# Utilities
-python-multipart==0.0.6
-requests==2.31.0
-aiohttp
-ujson==5.8.0
+# ============ UTILITIES ============
+
+# HTTP so'rovlar
+aiohttp==3.9.1                  # Aiogram talab qiladi
+requests==2.31.0                # Sync requests (agar kerak bo'lsa)
+
+# JSON
+ujson==5.8.0                    # Tezkor JSON
+
+# Logging
 colorlog==6.8.0
+
+# Progress bar
 tqdm==4.66.1
 
-# Security
+# ============ XAVFSIZLIK ============
+
+# QR kod va tokenlar
+qrcode==7.4.2                   # QR code generation
+pyjwt==2.8.0                    # JWT tokens
+
+# Shifrlash
 cryptography==41.0.7
+
+# Parol hashlash
 bcrypt==4.1.2
 passlib==1.7.4
 
-# Development
+# ============ QO'SHIMCHA (OPTIONAL) ============
+
+# Asosiy webserver uchun
+fastapi==0.104.1                # Web API uchun (agar kerak bo'lsa)
+uvicorn[standard]==0.24.0       # ASGI server
+
+# PDF generatsiya
+reportlab==4.0.4                # PDF hisobotlar uchun
+
+# Kengaytma funksiyalar
+arrow==1.3.0                    # Sana/vaqt utilities
+
+# ============ RIVOJLANTIRISH ============
+
+# Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
+
+# Code formatting
 black==23.11.0
 flake8==6.1.0
 isort==5.12.0
 
-# Optional (if needed)
-Pillow==10.1.0  # Image processing
-qrcode==7.4.2  # QR code generation
-pyjwt==2.8.0  # JWT tokens
+# Type checking
+mypy==1.7.0
+types-requests==2.31.0.10

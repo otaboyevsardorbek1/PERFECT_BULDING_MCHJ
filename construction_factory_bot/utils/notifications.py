@@ -203,7 +203,7 @@ async def send_notification_to_admins(title: str, message: str,
     for admin in admins:
         try:
             await send_notification_to_user(
-                admin.telegram_id,
+                admin.telegram_id, # type: ignore
                 title,
                 message,
                 notification_type

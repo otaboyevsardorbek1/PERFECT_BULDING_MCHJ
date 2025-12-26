@@ -276,7 +276,7 @@ def format_date(date_obj) -> str:
     else:  # YYYY-MM-DD
         return date_obj.strftime("%Y-%m-%d")
 
-def get_language_text(key: str, language: str = None) -> str:
+def get_language_text(key: str, language: str = None) -> str: # type: ignore
     """Tilga mos matnni olish"""
     if language is None:
         language = SYSTEM_SETTINGS['language']
