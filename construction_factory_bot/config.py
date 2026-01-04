@@ -275,14 +275,11 @@ def format_date(date_obj) -> str:
         return date_obj.strftime("%m/%d/%Y")
     else:  # YYYY-MM-DD
         return date_obj.strftime("%Y-%m-%d")
-
-def get_language_text(key: str, language: str = None) -> str: # type: ignore
+def get_language_text(key: str, language: str = None) -> str:  # type: ignore
     """Tilga mos matnni olish"""
     if language is None:
         language = SYSTEM_SETTINGS['language']
-    
-    # Bu yerda til fayllarini yuklash kerak
-    # Hozircha oddiy versiya
+
     texts = {
         "uz": {
             "welcome": "Xush kelibsiz!",
@@ -336,19 +333,116 @@ def get_language_text(key: str, language: str = None) -> str: # type: ignore
             "update": "Yangilash",
             "maintenance": "Texnik xizmat"
         },
+
         "ru": {
             "welcome": "Добро пожаловать!",
             "error": "Произошла ошибка",
-            # ... boshqa tarjimalar
+            "success": "Успешно выполнено",
+            "confirm": "Подтвердить?",
+            "cancel": "Отмена",
+            "save": "Сохранить",
+            "delete": "Удалить",
+            "edit": "Редактировать",
+            "view": "Просмотр",
+            "add": "Добавить",
+            "search": "Поиск",
+            "filter": "Фильтр",
+            "sort": "Сортировка",
+            "export": "Экспорт",
+            "import": "Импорт",
+            "print": "Печать",
+            "refresh": "Обновить",
+            "help": "Помощь",
+            "settings": "Настройки",
+            "logout": "Выход",
+            "login": "Вход",
+            "register": "Регистрация",
+            "profile": "Профиль",
+            "dashboard": "Панель управления",
+            "reports": "Отчёты",
+            "statistics": "Статистика",
+            "notifications": "Уведомления",
+            "messages": "Сообщения",
+            "calendar": "Календарь",
+            "tasks": "Задачи",
+            "projects": "Проекты",
+            "employees": "Сотрудники",
+            "customers": "Клиенты",
+            "products": "Товары",
+            "orders": "Заказы",
+            "inventory": "Инвентаризация",
+            "warehouse": "Склад",
+            "production": "Производство",
+            "sales": "Продажи",
+            "purchases": "Закупки",
+            "finance": "Финансы",
+            "accounting": "Бухгалтерия",
+            "hr": "Кадры",
+            "administration": "Администрирование",
+            "system": "Система",
+            "security": "Безопасность",
+            "backup": "Резервное копирование",
+            "restore": "Восстановление",
+            "update": "Обновление",
+            "maintenance": "Техническое обслуживание"
         },
+
         "en": {
             "welcome": "Welcome!",
             "error": "An error occurred",
-            # ... boshqa tarjimalar
+            "success": "Successfully completed",
+            "confirm": "Do you confirm?",
+            "cancel": "Cancel",
+            "save": "Save",
+            "delete": "Delete",
+            "edit": "Edit",
+            "view": "View",
+            "add": "Add",
+            "search": "Search",
+            "filter": "Filter",
+            "sort": "Sort",
+            "export": "Export",
+            "import": "Import",
+            "print": "Print",
+            "refresh": "Refresh",
+            "help": "Help",
+            "settings": "Settings",
+            "logout": "Logout",
+            "login": "Login",
+            "register": "Register",
+            "profile": "Profile",
+            "dashboard": "Dashboard",
+            "reports": "Reports",
+            "statistics": "Statistics",
+            "notifications": "Notifications",
+            "messages": "Messages",
+            "calendar": "Calendar",
+            "tasks": "Tasks",
+            "projects": "Projects",
+            "employees": "Employees",
+            "customers": "Customers",
+            "products": "Products",
+            "orders": "Orders",
+            "inventory": "Inventory",
+            "warehouse": "Warehouse",
+            "production": "Production",
+            "sales": "Sales",
+            "purchases": "Purchases",
+            "finance": "Finance",
+            "accounting": "Accounting",
+            "hr": "Human Resources",
+            "administration": "Administration",
+            "system": "System",
+            "security": "Security",
+            "backup": "Backup",
+            "restore": "Restore",
+            "update": "Update",
+            "maintenance": "Maintenance"
         }
     }
-    
-    return texts.get(language, {}).get(key, key)
+
+    return texts.get(language, texts["uz"]).get(key, key)
+
 
 # Konfiguratsiyani tekshirish
 def validate_config():
