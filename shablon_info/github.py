@@ -296,7 +296,7 @@ def convert_to_raw_url(blob_url: str) -> str:
     # Agar o'zgartirib bo'lmasa, asl URL ni qaytarish
     return blob_url
 
-def process_json_file(input_file: str, output_file: str = None):
+def process_json_file(input_file: str, output_file: str = None) -> List[str]:
     """
     JSON fayldagi GitHub URL'larini raw formatga o'zgartiradi
     """
