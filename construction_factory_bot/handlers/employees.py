@@ -101,13 +101,10 @@ async def process_phone_number(message: types.Message, state: FSMContext):
     await state.update_data(phone_number=message.text)
     
     # Lavozim tanlash uchun keyboard
-    keyboard = InlineKeyboardMarkup(row_width=2)
     positions = list(EMPLOYEE_POSITIONS.items())
-    
-    for pos_code, pos_name in positions:
-        keyboard.insert(InlineKeyboardButton(pos_name, callback_data=f"position_{pos_code}"))
-    
-    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_start"))
+    pos_rows = [[InlineKeyboardButton(text=pos_name, callback_data=f"position_{pos_code}")] for pos_code, pos_name in positions]
+    pos_rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_start")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=pos_rows)
     
     await message.answer("Lavozimini tanlang:", reply_markup=keyboard)
     await EmployeeStates.waiting_position.set()
@@ -137,11 +134,9 @@ async def process_position(callback_query: types.CallbackQuery, state: FSMContex
         "quality": "Sifat nazorati"
     }
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    for dept_code, dept_name in departments.items():
-        keyboard.insert(InlineKeyboardButton(dept_name, callback_data=f"dept_{dept_code}"))
-    
-    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_position"))
+    dept_rows = [[InlineKeyboardButton(text=dept_name, callback_data=f"dept_{dept_code}")] for dept_code, dept_name in departments.items()]
+    dept_rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_position")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=dept_rows)
     
     await callback_query.message.answer("Bo'limini tanlang:", reply_markup=keyboard)
     await EmployeeStates.waiting_department.set()
@@ -236,11 +231,10 @@ async def process_telegram_id(message: types.Message, state: FSMContext):
 Ma'lumotlar to'g'rimi?
 """
         
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("✅ Ha, qo'shish", callback_data="confirm_add_yes"),
-            InlineKeyboardButton("❌ Yo'q, qayta kirish", callback_data="confirm_add_no")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Ha, qo'shish", callback_data="confirm_add_yes"),
+             InlineKeyboardButton(text="❌ Yo'q, qayta kirish", callback_data="confirm_add_no")],
+        ])
         
         await message.answer(summary, reply_markup=keyboard, parse_mode="Markdown")
         await EmployeeStates.confirm_add_employee.set()
@@ -347,13 +341,12 @@ async def view_employees(message: types.Message):
         f"• Faol emas: {total_count - active_count} ta"
     )
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📊 Statistika", callback_data="emp_stats"),
-        InlineKeyboardButton("📋 Excel hisobot", callback_data="emp_excel"),
-        InlineKeyboardButton("📈 Grafik", callback_data="emp_chart"),
-        InlineKeyboardButton("🔍 Qidirish", callback_data="emp_search")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Statistika", callback_data="emp_stats"),
+         InlineKeyboardButton(text="📋 Excel hisobot", callback_data="emp_excel")],
+        [InlineKeyboardButton(text="📈 Grafik", callback_data="emp_chart"),
+         InlineKeyboardButton(text="🔍 Qidirish", callback_data="emp_search")],
+    ])
     
     await message.answer(employees_text, parse_mode="Markdown", reply_markup=keyboard)
 
@@ -429,15 +422,15 @@ async def employee_details(callback_query: types.CallbackQuery, employee_id: int
             details_text += f"• Holat: {last_payment.status}\n"
         
         # Admin uchun qo'shimcha tugmalar
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        
         if callback_query.from_user.id in ADMIN_IDS:
-            keyboard.add(
-                InlineKeyboardButton("✏️ Tahrirlash", callback_data=f"emp_edit_{employee.id}"),
-                InlineKeyboardButton("⏱️ Ish vaqti", callback_data=f"emp_work_{employee.id}"),
-                InlineKeyboardButton("💰 Maosh to'lash", callback_data=f"emp_salary_{employee.id}"),
-                InlineKeyboardButton("📊 Statistika", callback_data=f"emp_stats_{employee.id}")
-            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data=f"emp_edit_{employee.id}"),
+                 InlineKeyboardButton(text="⏱️ Ish vaqti", callback_data=f"emp_work_{employee.id}")],
+                [InlineKeyboardButton(text="💰 Maosh to'lash", callback_data=f"emp_salary_{employee.id}"),
+                 InlineKeyboardButton(text="📊 Statistika", callback_data=f"emp_stats_{employee.id}")],
+            ])
+        else:
+            keyboard = None
         
         keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="emp_back"))
         
@@ -584,11 +577,10 @@ async def process_overtime(message: types.Message, state: FSMContext):
 Ma'lumotlarni saqlaysizmi?
 """
         
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("✅ Ha, saqlash", callback_data="save_work_hours"),
-            InlineKeyboardButton("❌ Yo'q, bekor qilish", callback_data="cancel_work_hours")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Ha, saqlash", callback_data="save_work_hours"),
+             InlineKeyboardButton(text="❌ Yo'q, bekor qilish", callback_data="cancel_work_hours")],
+        ])
         
         await message.answer(summary, reply_markup=keyboard, parse_mode="Markdown")
         await EmployeeStates.confirm_work_hours.set()
@@ -680,11 +672,10 @@ async def salary_payment_start(callback_query: types.CallbackQuery, state: FSMCo
         9: "Sentabr", 10: "Oktabr", 11: "Noyabr", 12: "Dekabr"
     }
     
-    keyboard = InlineKeyboardMarkup(row_width=3)
-    for month_num, month_name in months.items():
-        keyboard.insert(InlineKeyboardButton(month_name, callback_data=f"month_{month_num}"))
-    
-    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_employee"))
+    month_items = list(months.items())
+    month_rows = [[InlineKeyboardButton(text=mn, callback_data=f"month_{mc}") for mc, mn in month_items[i:i+3]] for i in range(0, len(month_items), 3)]
+    month_rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_employee")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=month_rows)
     
     await callback_query.message.answer(
         f"💰 **{employee.full_name}** uchun maosh to'lash\n\n"
@@ -713,11 +704,10 @@ async def process_salary_month(callback_query: types.CallbackQuery, state: FSMCo
     # Yil tanlash
     current_year = datetime.now().year
     
-    keyboard = InlineKeyboardMarkup(row_width=3)
-    for year in range(current_year - 2, current_year + 1):
-        keyboard.insert(InlineKeyboardButton(str(year), callback_data=f"year_{year}"))
-    
-    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="back_to_month"))
+    year_items = [(str(y), f"year_{y}") for y in range(current_year - 2, current_year + 1)]
+    year_rows = [[InlineKeyboardButton(text=yt, callback_data=cd) for yt, cd in year_items[i:i+3]] for i in range(0, len(year_items), 3)]
+    year_rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back_to_month")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=year_rows)
     
     await callback_query.message.answer("Yilini tanlang:", reply_markup=keyboard)
     await EmployeeStates.waiting_salary_year.set()
@@ -817,11 +807,10 @@ async def process_deduction(message: types.Message, state: FSMContext):
 Ma'lumotlar to'g'rimi?
 """
         
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("✅ Ha, to'lash", callback_data="confirm_salary_yes"),
-            InlineKeyboardButton("❌ Yo'q, bekor qilish", callback_data="confirm_salary_no")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Ha, to'lash", callback_data="confirm_salary_yes"),
+             InlineKeyboardButton(text="❌ Yo'q, bekor qilish", callback_data="confirm_salary_no")],
+        ])
         
         await message.answer(summary, reply_markup=keyboard, parse_mode="Markdown")
         await EmployeeStates.confirm_salary_payment.set()
@@ -941,13 +930,12 @@ async def employee_statistics(message: types.Message):
     stats_text += f"├ Jami ish soati: {total_hours:.1f} soat\n"
     stats_text += f"└ Kuniga o'rtacha: {avg_daily_hours:.1f} soat\n"
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📈 Grafik", callback_data="emp_stats_chart"),
-        InlineKeyboardButton("📋 Excel hisobot", callback_data="emp_stats_excel"),
-        InlineKeyboardButton("👥 Eng faol xodimlar", callback_data="emp_top_active"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="emp_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📈 Grafik", callback_data="emp_stats_chart"),
+         InlineKeyboardButton(text="📋 Excel hisobot", callback_data="emp_stats_excel")],
+        [InlineKeyboardButton(text="👥 Eng faol xodimlar", callback_data="emp_top_active"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="emp_back")],
+    ])
     
     await message.answer(stats_text, parse_mode="Markdown", reply_markup=keyboard)
 
@@ -1149,11 +1137,10 @@ async def process_search_query(message: types.Message, state: FSMContext):
     if len(employees) > 10:
         search_results += f"... va yana {len(employees) - 10} ta natija\n"
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📋 Batafsil ko'rish", callback_data="view_search_results"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="emp_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Batafsil ko'rish", callback_data="view_search_results"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="emp_back")],
+    ])
     
     await state.update_data(search_results=employees)
     await message.answer(search_results, parse_mode="Markdown", reply_markup=keyboard)
@@ -1173,16 +1160,15 @@ async def edit_employee_start(callback_query: types.CallbackQuery, employee_id: 
         
         await state.update_data(editing_employee_id=employee_id)
         
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("👤 Ism", callback_data=f"edit_field_full_name"),
-            InlineKeyboardButton("📞 Telefon", callback_data=f"edit_field_phone"),
-            InlineKeyboardButton("📋 Lavozim", callback_data=f"edit_field_position"),
-            InlineKeyboardButton("🏢 Bo'lim", callback_data=f"edit_field_department"),
-            InlineKeyboardButton("💰 Maosh", callback_data=f"edit_field_salary"),
-            InlineKeyboardButton("📊 Holat", callback_data=f"edit_field_status"),
-            InlineKeyboardButton("⬅️ Orqaga", callback_data=f"emp_back")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👤 Ism", callback_data="edit_field_full_name"),
+             InlineKeyboardButton(text="📞 Telefon", callback_data="edit_field_phone")],
+            [InlineKeyboardButton(text="📋 Lavozim", callback_data="edit_field_position"),
+             InlineKeyboardButton(text="🏢 Bo'lim", callback_data="edit_field_department")],
+            [InlineKeyboardButton(text="💰 Maosh", callback_data="edit_field_salary"),
+             InlineKeyboardButton(text="📊 Holat", callback_data="edit_field_status")],
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="emp_back")],
+        ])
         
         await callback_query.message.answer(
             f"✏️ **{employee.full_name}** ni tahrirlash\n\n"
@@ -1210,13 +1196,12 @@ async def process_edit_field(callback_query: types.CallbackQuery, state: FSMCont
     await state.update_data(edit_field=field)
     
     if field == "status":
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("🟢 Faol", callback_data="edit_status_ACTIVE"),
-            InlineKeyboardButton("🟡 Ta'tilda", callback_data="edit_status_ON_LEAVE"),
-            InlineKeyboardButton("🔴 Ishdan bo'shatilgan", callback_data="edit_status_FIRED"),
-            InlineKeyboardButton("🟣 Dam olish", callback_data="edit_status_VACATION")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 Faol", callback_data="edit_status_ACTIVE"),
+             InlineKeyboardButton(text="🟡 Ta'tilda", callback_data="edit_status_ON_LEAVE")],
+            [InlineKeyboardButton(text="🔴 Ishdan bo'shatilgan", callback_data="edit_status_FIRED"),
+             InlineKeyboardButton(text="🟣 Dam olish", callback_data="edit_status_VACATION")],
+        ])
         await callback_query.message.answer(field_labels.get(field, "Qiymatni kiriting:"), reply_markup=keyboard)
     else:
         await callback_query.message.answer(field_labels.get(field, "Qiymatni kiriting:"))

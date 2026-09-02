@@ -49,20 +49,17 @@ async def ai_prediction_menu(message: types.Message):
 async def demand_prediction_start(message: types.Message):
     """Talab bashoratini boshlash"""
     
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    
     with get_db_session() as db:
         products = db.query(models.Product).filter(
             models.Product.is_active == True
         ).all()
         
-        for product in products:
-            keyboard.insert(
-                types.InlineKeyboardButton(
-                    text=product.name,
-                    callback_data=f"pred_demand_{product.id}"
-                )
-            )
+        product_rows = [[types.InlineKeyboardButton(
+            text=product.name,
+            callback_data=f"pred_demand_{product.id}"
+        )] for product in products]
+    
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=product_rows if product_rows else [[]])
     
     await message.answer(
         "🔮 <b>TALAB BASHORATI</b>\n\n"
@@ -121,20 +118,17 @@ async def process_demand_prediction(callback_query: types.CallbackQuery, state: 
 async def price_optimization_start(message: types.Message):
     """Narx optimallashtirishni boshlash"""
     
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    
     with get_db_session() as db:
         products = db.query(models.Product).filter(
             models.Product.is_active == True
         ).all()
         
-        for product in products:
-            keyboard.insert(
-                types.InlineKeyboardButton(
-                    text=product.name,
-                    callback_data=f"pred_price_{product.id}"
-                )
-            )
+        product_rows = [[types.InlineKeyboardButton(
+            text=product.name,
+            callback_data=f"pred_price_{product.id}"
+        )] for product in products]
+    
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=product_rows if product_rows else [[]])
     
     await message.answer(
         "💰 <b>NARX OPTIMALLASHTIRISH</b>\n\n"
@@ -230,20 +224,17 @@ async def inventory_prediction(message: types.Message):
 async def production_time_prediction(message: types.Message):
     """Ishlab chiqarish vaqtini bashorat qilish"""
     
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    
     with get_db_session() as db:
         products = db.query(models.Product).filter(
             models.Product.is_active == True
         ).all()
         
-        for product in products:
-            keyboard.insert(
-                types.InlineKeyboardButton(
-                    text=product.name,
-                    callback_data=f"pred_time_{product.id}"
-                )
-            )
+        product_rows = [[types.InlineKeyboardButton(
+            text=product.name,
+            callback_data=f"pred_time_{product.id}"
+        )] for product in products]
+    
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=product_rows if product_rows else [[]])
     
     await message.answer(
         "🏭 <b>ISHLAB CHIQARISH VAQTI</b>\n\n"

@@ -90,15 +90,14 @@ async def admin_user_management(message: types.Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("➕ Yangi admin qo'shish", callback_data="admin_add_admin"),
-        InlineKeyboardButton("➖ Adminni olib tashlash", callback_data="admin_remove_admin"),
-        InlineKeyboardButton("📋 Adminlar ro'yxati", callback_data="admin_list_admins"),
-        InlineKeyboardButton("👥 Barcha xodimlar", callback_data="admin_list_all_users"),
-        InlineKeyboardButton("📊 Xodim statistikasi", callback_data="admin_user_stats"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Yangi admin qo'shish", callback_data="admin_add_admin"),
+         InlineKeyboardButton(text="➖ Adminni olib tashlash", callback_data="admin_remove_admin")],
+        [InlineKeyboardButton(text="📋 Adminlar ro'yxati", callback_data="admin_list_admins"),
+         InlineKeyboardButton(text="👥 Barcha xodimlar", callback_data="admin_list_all_users")],
+        [InlineKeyboardButton(text="📊 Xodim statistikasi", callback_data="admin_user_stats"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")],
+    ])
     
     await message.answer("👥 **Xodimlar Boshqaruvi**\n\nQuyidagi amallardan birini tanlang:", 
                         reply_markup=keyboard, parse_mode="Markdown")
@@ -251,15 +250,14 @@ async def system_settings(message: types.Message):
     for key, value in settings.items():
         settings_text += f"• {key}: **{value}**\n"
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("🔔 Ogohlantirishlar", callback_data="settings_notifications"),
-        InlineKeyboardButton("💾 Backup", callback_data="settings_backup"),
-        InlineKeyboardButton("📊 Statistika", callback_data="settings_stats"),
-        InlineKeyboardButton("🔐 Ruxsatlar", callback_data="settings_permissions"),
-        InlineKeyboardButton("🔄 Yangilash tezligi", callback_data="settings_update"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔔 Ogohlantirishlar", callback_data="settings_notifications"),
+         InlineKeyboardButton(text="💾 Backup", callback_data="settings_backup")],
+        [InlineKeyboardButton(text="📊 Statistika", callback_data="settings_stats"),
+         InlineKeyboardButton(text="🔐 Ruxsatlar", callback_data="settings_permissions")],
+        [InlineKeyboardButton(text="🔄 Yangilash tezligi", callback_data="settings_update"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")],
+    ])
     
     await message.answer(settings_text + "\nSozlamani tanlang:", 
                         reply_markup=keyboard, parse_mode="Markdown")
@@ -270,11 +268,10 @@ async def backup_database(message: types.Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton("✅ Ha, backup olish", callback_data="backup_confirm"),
-        InlineKeyboardButton("❌ Bekor qilish", callback_data="backup_cancel")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Ha, backup olish", callback_data="backup_confirm"),
+         InlineKeyboardButton(text="❌ Bekor qilish", callback_data="backup_cancel")],
+    ])
     
     await message.answer(
         "⚠️ **DATABASE BACKUP**\n\n"
@@ -369,13 +366,12 @@ async def view_audit_logs(message: types.Message):
     else:
         await message.answer(logs_text, parse_mode="Markdown")
     
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton("📊 To'liq loglar", callback_data="logs_full"),
-        InlineKeyboardButton("🧹 Loglarni tozalash", callback_data="logs_clear"),
-        InlineKeyboardButton("📤 Loglarni yuklash", callback_data="logs_download"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 To'liq loglar", callback_data="logs_full"),
+         InlineKeyboardButton(text="🧹 Loglarni tozalash", callback_data="logs_clear")],
+        [InlineKeyboardButton(text="📤 Loglarni yuklash", callback_data="logs_download"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")],
+    ])
     
     await message.answer("Boshqa amallar:", reply_markup=keyboard)
 
@@ -438,13 +434,12 @@ async def system_statistics(message: types.Message):
 └ Bugungi loglar: {todays_logs} ta
 """
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📈 Batafsil statistika", callback_data="stats_detailed"),
-        InlineKeyboardButton("📊 Grafiklar", callback_data="stats_charts"),
-        InlineKeyboardButton("📤 Excel hisobot", callback_data="stats_excel"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📈 Batafsil statistika", callback_data="stats_detailed"),
+         InlineKeyboardButton(text="📊 Grafiklar", callback_data="stats_charts")],
+        [InlineKeyboardButton(text="📤 Excel hisobot", callback_data="stats_excel"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")],
+    ])
     
     await message.answer(stats_text, reply_markup=keyboard, parse_mode="Markdown")
 

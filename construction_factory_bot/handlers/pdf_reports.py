@@ -59,16 +59,13 @@ async def handle_pdf_report_selection(message: types.Message, state: FSMContext)
         await state.update_data(report_type=report_type)
         
         # Davr tanlash tugmalari
-        keyboard = types.InlineKeyboardMarkup(row_width=3)
-        keyboard.add(
-            types.InlineKeyboardButton("Kunlik", callback_data="pdf_daily"),
-            types.InlineKeyboardButton("Haftalik", callback_data="pdf_weekly"),
-            types.InlineKeyboardButton("Oylik", callback_data="pdf_monthly")
-        )
-        keyboard.add(
-            types.InlineKeyboardButton("Choraklik", callback_data="pdf_quarterly"),
-            types.InlineKeyboardButton("Yillik", callback_data="pdf_yearly")
-        )
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="Kunlik", callback_data="pdf_daily"),
+             types.InlineKeyboardButton(text="Haftalik", callback_data="pdf_weekly"),
+             types.InlineKeyboardButton(text="Oylik", callback_data="pdf_monthly")],
+            [types.InlineKeyboardButton(text="Choraklik", callback_data="pdf_quarterly"),
+             types.InlineKeyboardButton(text="Yillik", callback_data="pdf_yearly")],
+        ])
         
         await message.answer(
             "📅 Hisobot davrini tanlang:",

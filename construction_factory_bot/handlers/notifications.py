@@ -94,12 +94,9 @@ async def create_notification_start(message: types.Message):
     if message.from_user.id not in ADMIN_IDS:
         return
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    
-    for notif_type, notif_name in NOTIFICATION_TYPES.items():
-        keyboard.insert(InlineKeyboardButton(notif_name, callback_data=f"type_{notif_type}"))
-    
-    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back"))
+    notif_rows = [[InlineKeyboardButton(text=notif_name, callback_data=f"type_{notif_type}")] for notif_type, notif_name in NOTIFICATION_TYPES.items()]
+    notif_rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=notif_rows)
     
     await message.answer("Bildirishnoma turini tanlang:", reply_markup=keyboard)
     await NotificationStates.waiting_notification_type.set()
@@ -136,16 +133,15 @@ async def process_notification_message(message: types.Message, state: FSMContext
     await state.update_data(message=message.text)
     
     # Qabul qiluvchini tanlash
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("👥 Barcha foydalanuvchilar", callback_data="recipient_all"),
-        InlineKeyboardButton("👑 Adminlar", callback_data="recipient_admins"),
-        InlineKeyboardButton("🏭 Ishlab chiqarish boʻlimi", callback_data="recipient_production"),
-        InlineKeyboardButton("📦 Ombor boʻlimi", callback_data="recipient_warehouse"),
-        InlineKeyboardButton("💰 Buxgalteriya", callback_data="recipient_accounting"),
-        InlineKeyboardButton("👤 Maxsus foydalanuvchi", callback_data="recipient_specific"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back_to_type")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👥 Barcha foydalanuvchilar", callback_data="recipient_all"),
+         InlineKeyboardButton(text="👑 Adminlar", callback_data="recipient_admins")],
+        [InlineKeyboardButton(text="🏭 Ishlab chiqarish boʻlimi", callback_data="recipient_production"),
+         InlineKeyboardButton(text="📦 Ombor boʻlimi", callback_data="recipient_warehouse")],
+        [InlineKeyboardButton(text="💰 Buxgalteriya", callback_data="recipient_accounting"),
+         InlineKeyboardButton(text="👤 Maxsus foydalanuvchi", callback_data="recipient_specific")],
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back_to_type")],
+    ])
     
     await message.answer("Kimga yuborilsin?", reply_markup=keyboard)
     await NotificationStates.waiting_notification_recipient.set()
@@ -188,14 +184,13 @@ async def process_notification_recipient(callback_query: types.CallbackQuery, st
     await callback_query.answer(f"Tanlangan: {recipient_type}")
     
     # Priority tanlash
-    keyboard = InlineKeyboardMarkup(row_width=3)
-    keyboard.add(
-        InlineKeyboardButton("🟢 Past (1)", callback_data="priority_1"),
-        InlineKeyboardButton("🟡 Oʻrta (2)", callback_data="priority_2"),
-        InlineKeyboardButton("🟠 Yuqori (3)", callback_data="priority_3"),
-        InlineKeyboardButton("🔴 Judayam yuqori (4)", callback_data="priority_4"),
-        InlineKeyboardButton("🚨 Favqulodda (5)", callback_data="priority_5")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🟢 Past (1)", callback_data="priority_1"),
+         InlineKeyboardButton(text="🟡 Oʻrta (2)", callback_data="priority_2"),
+         InlineKeyboardButton(text="🟠 Yuqori (3)", callback_data="priority_3")],
+        [InlineKeyboardButton(text="🔴 Judayam yuqori (4)", callback_data="priority_4"),
+         InlineKeyboardButton(text="🚨 Favqulodda (5)", callback_data="priority_5")],
+    ])
     
     await callback_query.message.answer("Bildirishnoma ustuvorligini tanlang:", reply_markup=keyboard)
     await NotificationStates.waiting_notification_priority.set()
@@ -216,12 +211,11 @@ async def process_notification_priority(callback_query: types.CallbackQuery, sta
     
     await callback_query.answer(f"Tanlangan: {priority_text}")
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("⏰ Darhol yuborish", callback_data="schedule_now"),
-        InlineKeyboardButton("📅 Vaqt belgilash", callback_data="schedule_later"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back_to_recipient")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏰ Darhol yuborish", callback_data="schedule_now"),
+         InlineKeyboardButton(text="📅 Vaqt belgilash", callback_data="schedule_later")],
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back_to_recipient")],
+    ])
     
     await callback_query.message.answer("Qachon yuborilsin?", reply_markup=keyboard)
     await NotificationStates.waiting_notification_schedule.set()
@@ -318,11 +312,10 @@ async def confirm_notification(callback_query_or_message, state: FSMContext):
 Bildirishnomani yuboramizmi?
 """
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("✅ Ha, yuborish", callback_data="confirm_notif_yes"),
-        InlineKeyboardButton("❌ Yoʻq, bekor qilish", callback_data="confirm_notif_no")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Ha, yuborish", callback_data="confirm_notif_yes"),
+         InlineKeyboardButton(text="❌ Yoʻq, bekor qilish", callback_data="confirm_notif_no")],
+    ])
     
     if isinstance(callback_query_or_message, types.CallbackQuery):
         await callback_query_or_message.message.answer(summary, reply_markup=keyboard, parse_mode="Markdown")
@@ -512,15 +505,14 @@ async def view_notifications(message: types.Message):
             f"   📝 {notif.message[:50]}...\n\n"
         )
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📭 Kutilayotganlar", callback_data="view_pending"),
-        InlineKeyboardButton("📨 Yuborilganlar", callback_data="view_sent"),
-        InlineKeyboardButton("✅ Oʻqilganlar", callback_data="view_read"),
-        InlineKeyboardButton("❌ Xatoliklar", callback_data="view_failed"),
-        InlineKeyboardButton("📊 Statistika", callback_data="notif_stats"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📭 Kutilayotganlar", callback_data="view_pending"),
+         InlineKeyboardButton(text="📨 Yuborilganlar", callback_data="view_sent")],
+        [InlineKeyboardButton(text="✅ Oʻqilganlar", callback_data="view_read"),
+         InlineKeyboardButton(text="❌ Xatoliklar", callback_data="view_failed")],
+        [InlineKeyboardButton(text="📊 Statistika", callback_data="notif_stats"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back")],
+    ])
     
     await message.answer(notifications_text, parse_mode="Markdown", reply_markup=keyboard)
     await NotificationStates.viewing_notifications.set()
@@ -609,18 +601,16 @@ async def auto_notifications(message: types.Message):
         status = "✅ Yoqilgan" if enabled else "❌ Oʻchirilgan"
         settings_text += f"• {NOTIFICATION_TYPES.get(setting, setting)}: {status}\n"
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    
-    for setting in auto_settings.keys():
-        button_text = f"❌ {NOTIFICATION_TYPES.get(setting, setting)}" if auto_settings[setting] else f"✅ {NOTIFICATION_TYPES.get(setting, setting)}"
-        keyboard.insert(InlineKeyboardButton(button_text, callback_data=f"auto_toggle_{setting}"))
-    
-    keyboard.add(
-        InlineKeyboardButton("🔔 Barchasini yoqish", callback_data="auto_enable_all"),
-        InlineKeyboardButton("🔕 Barchasini oʻchirish", callback_data="auto_disable_all"),
-        InlineKeyboardButton("🔄 Tekshirish", callback_data="auto_check_now"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back")
-    )
+    toggle_rows = [[InlineKeyboardButton(text=f"❌ {NOTIFICATION_TYPES.get(s, s)}" if auto_settings[s] else f"✅ {NOTIFICATION_TYPES.get(s, s)}", callback_data=f"auto_toggle_{s}")] for s in auto_settings.keys()]
+    toggle_rows.append([
+        InlineKeyboardButton(text="🔔 Barchasini yoqish", callback_data="auto_enable_all"),
+        InlineKeyboardButton(text="🔕 Barchasini oʻchirish", callback_data="auto_disable_all"),
+    ])
+    toggle_rows.append([
+        InlineKeyboardButton(text="🔄 Tekshirish", callback_data="auto_check_now"),
+        InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back"),
+    ])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=toggle_rows)
     
     await message.answer(settings_text + "\nSozlamani oʻzgartirish:", reply_markup=keyboard)
 
@@ -733,13 +723,12 @@ async def notification_statistics(message: types.Message):
         percentage = (count / total_count * 100) if total_count > 0 else 0
         stats_text += f"├ {type_name}: {count} ta ({percentage:.1f}%)\n"
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📈 Grafik", callback_data="notif_stats_chart"),
-        InlineKeyboardButton("📋 Excel hisobot", callback_data="notif_stats_excel"),
-        InlineKeyboardButton("🔄 Yangilash", callback_data="notif_stats_refresh"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📈 Grafik", callback_data="notif_stats_chart"),
+         InlineKeyboardButton(text="📋 Excel hisobot", callback_data="notif_stats_excel")],
+        [InlineKeyboardButton(text="🔄 Yangilash", callback_data="notif_stats_refresh"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back")],
+    ])
     
     await message.answer(stats_text, parse_mode="Markdown", reply_markup=keyboard)
 
@@ -795,13 +784,12 @@ async def my_notifications(message: types.Message):
             f"   📝 {notif.message[:80]}...\n\n"
         )
     
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📖 Barchasini koʻrish", callback_data="my_notifs_all"),
-        InlineKeyboardButton("✅ Barchasini oʻqildi deb belgilash", callback_data="my_notifs_mark_read"),
-        InlineKeyboardButton("🗑️ Barchasini oʻchirish", callback_data="my_notifs_clear"),
-        InlineKeyboardButton("⬅️ Orqaga", callback_data="notif_back")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 Barchasini koʻrish", callback_data="my_notifs_all"),
+         InlineKeyboardButton(text="✅ Barchasini oʻqildi deb belgilash", callback_data="my_notifs_mark_read")],
+        [InlineKeyboardButton(text="🗑️ Barchasini oʻchirish", callback_data="my_notifs_clear"),
+         InlineKeyboardButton(text="⬅️ Orqaga", callback_data="notif_back")],
+    ])
     
     await message.answer(my_notifs_text, parse_mode="Markdown", reply_markup=keyboard)
 

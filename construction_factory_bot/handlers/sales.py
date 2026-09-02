@@ -73,20 +73,17 @@ async def new_sale_start(message: Message, state: FSMContext):
     """Yangi sotuvni boshlash"""
     
     # Mahsulotlar ro'yxatini ko'rsatish
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    
     with get_db_session() as db:
         products = db.query(models.Product).filter(
             models.Product.is_active == True
         ).all()
         
-        for product in products:
-            keyboard.insert(
-                types.InlineKeyboardButton(
-                    text=f"{product.name} ({product.selling_price:,.0f} so'm)",
-                    callback_data=f"sale_product_{product.id}"
-                )
-            )
+        product_rows = [[types.InlineKeyboardButton(
+            text=f"{product.name} ({product.selling_price:,.0f} so'm)",
+            callback_data=f"sale_product_{product.id}"
+        )] for product in products]
+    
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=product_rows if product_rows else [[]])
     
     await message.answer(
         "🛒 <b>Yangi sotuv</b>\n\n"
@@ -185,13 +182,12 @@ async def process_customer_phone(message: Message, state: FSMContext):
     await state.update_data(customer_phone=message.text)
     
     # To'lov usulini tanlash
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        types.InlineKeyboardButton("💵 Naqd", callback_data="pay_cash"),
-        types.InlineKeyboardButton("💳 Kartochka", callback_data="pay_card"),
-        types.InlineKeyboardButton("🏦 O'tkazma", callback_data="pay_transfer"),
-        types.InlineKeyboardButton("📝 Nasiya", callback_data="pay_credit")
-    )
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="💵 Naqd", callback_data="pay_cash"),
+         types.InlineKeyboardButton(text="💳 Kartochka", callback_data="pay_card")],
+        [types.InlineKeyboardButton(text="🏦 O'tkazma", callback_data="pay_transfer"),
+         types.InlineKeyboardButton(text="📝 Nasiya", callback_data="pay_credit")],
+    ])
     
     await message.answer(
         "💳 To'lov usulini tanlang:",
@@ -229,11 +225,10 @@ async def process_payment_method(callback: CallbackQuery, state: FSMContext):
         f"Sotuvni tasdiqlaysizmi?"
     )
     
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        types.InlineKeyboardButton("✅ Tasdiqlash", callback_data="confirm_sale"),
-        types.InlineKeyboardButton("❌ Bekor qilish", callback_data="cancel_sale")
-    )
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="confirm_sale"),
+         types.InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_sale")],
+    ])
     
     await callback.message.answer(confirm_text, reply_markup=keyboard, parse_mode="HTML")
     await SalesStates.waiting_for_confirmation.set()
