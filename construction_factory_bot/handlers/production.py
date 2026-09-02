@@ -88,39 +88,28 @@ async def process_product_selection(callback_query: types.CallbackQuery, state: 
     """Mahsulotni tanlash"""
     await callback_query.answer()
 
-    product_code = callback_query.data.replace("product_", "")
-
-    # Product code bo'yicha product_id ni olish
-    product_map = {
-        "sement": "Sement M500 (50kg)",
-        "rodbin": "Rodbin 12mm",
-        "kafel": "Kafel 30x30",
-        "nalinoy_pol": "Nalinoy pol",
-        "gips": "Gips",
-        "keramika": "Keramika plitka"
-    }
-
-    if product_code in product_map:
-        product_name = product_map[product_code]
-
-        with get_db_session() as db:
-            product = db.query(Product).filter(Product.name == product_name).first()
-
-            if product:
-                await state.update_data(product_id=product.id, product_name=product_name)
-
-                await callback_query.message.answer(
-                    f"✅ Tanlangan mahsulot: {product_name}\n\n"
-                    f"📦 Necha birlik ishlab chiqarmoqchisiz?",
-                    reply_markup=ReplyKeyboardRemove()
-                )
-                await ProductionStates.waiting_quantity.set()
-            else:
-                await callback_query.message.answer("❌ Mahsulot topilmadi.")
-                await state.clear()
-    else:
+    try:
+        product_id = int(callback_query.data.replace("product_", ""))
+    except (ValueError, TypeError):
         await callback_query.message.answer("❌ Noto'g'ri tanlov.")
         await state.clear()
+        return
+
+    with get_db_session() as db:
+        product = db.query(Product).filter(Product.id == product_id).first()
+
+        if product:
+            await state.update_data(product_id=product.id, product_name=product.name)
+
+            await callback_query.message.answer(
+                f"✅ Tanlangan mahsulot: {product.name}\n\n"
+                f"📦 Necha birlik ishlab chiqarmoqchisiz?",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            await ProductionStates.waiting_quantity.set()
+        else:
+            await callback_query.message.answer("❌ Mahsulot topilmadi.")
+            await state.clear()
 
 
 async def process_quantity(message: types.Message, state: FSMContext):
