@@ -258,7 +258,7 @@ class Notification(Base):
     scheduled_time = Column(DateTime, nullable=True)
     sent_time = Column(DateTime, nullable=True)
     read_time = Column(DateTime, nullable=True)
-    metadata = Column(JSON, nullable=True)  # Qo'shimcha ma'lumotlar
+    extra_data = Column("metadata", JSON, nullable=True)  # Qo'shimcha ma'lumotlar
     created_at = Column(DateTime, default=datetime.utcnow)
     
 class SystemLog(Base):

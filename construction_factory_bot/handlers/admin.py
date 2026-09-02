@@ -1,9 +1,10 @@
 """
 Admin Panel - Qurilish Korxonasi Admin Boshqaruvi
 """
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from datetime import datetime, timedelta
 import logging
@@ -494,46 +495,35 @@ def register_handlers_admin(dp: Dispatcher):
     """Admin handlers ni ro'yxatdan o'tkazish"""
     
     # Admin paneli
-    dp.register_message_handler(admin_panel, commands=['admin', 'adm'], state="*")
-    dp.register_message_handler(admin_panel, lambda msg: msg.text == "👑 Admin paneli", state="*")
+    dp.message.register(admin_panel, Command('admin', 'adm'))
+    dp.message.register(admin_panel, F.text == "👑 Admin paneli")
     
     # User management
-    dp.register_message_handler(admin_user_management, 
-                               lambda msg: msg.text == "👥 Xodimlar boshqaruvi", 
-                               state="*")
+    dp.message.register(admin_user_management, F.text == "👥 Xodimlar boshqaruvi")
     
     # System settings
-    dp.register_message_handler(system_settings, 
-                               lambda msg: msg.text == "⚙️ Tizim sozlamalari", 
-                               state="*")
+    dp.message.register(system_settings, F.text == "⚙️ Tizim sozlamalari")
     
     # Audit logs
-    dp.register_message_handler(view_audit_logs, 
-                               lambda msg: msg.text == "📝 Audit loglari", 
-                               state="*")
+    dp.message.register(view_audit_logs, F.text == "📝 Audit loglari")
     
     # System statistics
-    dp.register_message_handler(system_statistics, 
-                               lambda msg: msg.text == "📊 Tizim statistika", 
-                               state="*")
+    dp.message.register(system_statistics, F.text == "📊 Tizim statistika")
     
     # Backup database
-    dp.register_message_handler(backup_database, 
-                               lambda msg: msg.text == "💾 Backup olish", 
-                               state="*")
+    dp.message.register(backup_database, F.text == "💾 Backup olish")
     
     # Callback handlers
-    dp.register_callback_query_handler(admin_callback_handler, 
-                                      lambda c: c.data.startswith('admin_') or 
-                                               c.data.startswith('settings_') or
-                                               c.data.startswith('backup_') or
-                                               c.data.startswith('logs_') or
-                                               c.data.startswith('stats_'),
-                                      state="*")
+    dp.callback_query.register(admin_callback_handler, 
+                               F.data.startswith('admin_') | 
+                               F.data.startswith('settings_') |
+                               F.data.startswith('backup_') |
+                               F.data.startswith('logs_') |
+                               F.data.startswith('stats_'))
     
     # Admin state handlers
-    dp.register_message_handler(process_new_admin_id, state=AdminStates.waiting_new_admin_id)
-    dp.register_message_handler(process_admin_name, state=AdminStates.waiting_admin_name)
+    dp.message.register(process_new_admin_id, AdminStates.waiting_new_admin_id)
+    dp.message.register(process_admin_name, AdminStates.waiting_admin_name)
 
 # =============== YORDAMCHI FUNKSIYALAR ===============
 async def detailed_statistics(message: types.Message):

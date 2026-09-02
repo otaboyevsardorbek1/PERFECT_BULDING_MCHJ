@@ -407,6 +407,67 @@ admin_notifications = AdminMenu.create_notifications_admin_keyboard
 admin_quick_actions = AdminMenu.create_quick_actions_keyboard
 admin_back = AdminMenu.create_back_keyboard
 
+# =============== QO'SHIMCHA FUNKSIYALAR (handlerlar uchun) ===============
+
+def get_admin_menu():
+    """Admin paneli menyusi (reply keyboard)"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    buttons = [
+        KeyboardButton("👥 Xodimlar boshqaruvi"),
+        KeyboardButton("⚙️ Tizim sozlamalari"),
+        KeyboardButton("📊 Tizim statistika"),
+        KeyboardButton("📝 Audit loglari"),
+        KeyboardButton("💾 Backup olish"),
+        KeyboardButton("⬅️ Orqaga")
+    ]
+    keyboard.add(*buttons)
+    return keyboard
+
+def get_admin_dashboard_keyboard():
+    """Admin dashboard klaviaturasi"""
+    return AdminMenu.create_admin_main_keyboard()
+
+def get_employee_management_menu():
+    """Xodimlar boshqaruvi menyusi"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    buttons = [
+        KeyboardButton("➕ Yangi xodim"),
+        KeyboardButton("📋 Xodimlar ro'yxati"),
+        KeyboardButton("👤 Mening profilim"),
+        KeyboardButton("⏱️ Ish vaqti kiritish"),
+        KeyboardButton("💰 Maosh to'lash"),
+        KeyboardButton("📊 Xodimlar statistika"),
+        KeyboardButton("⬅️ Orqaga")
+    ]
+    keyboard.add(*buttons)
+    return keyboard
+
+def get_employee_actions_keyboard(employee_id: int):
+    """Xodim amallari klaviaturasi"""
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("✏️ Tahrirlash", callback_data=f"emp_edit_{employee_id}"),
+        InlineKeyboardButton("❌ O'chirish", callback_data=f"emp_delete_{employee_id}"),
+        InlineKeyboardButton("📊 Statistika", callback_data=f"emp_stats_{employee_id}"),
+        InlineKeyboardButton("⬅️ Orqaga", callback_data="emp_back")
+    )
+    return keyboard
+
+def get_notifications_menu():
+    """Bildirishnomalar menyusi"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    buttons = [
+        KeyboardButton("📝 Yangi bildirishnoma"),
+        KeyboardButton("📋 Barcha bildirishnomalar"),
+        KeyboardButton("⚙️ Avtomatik bildirishnomalar"),
+        KeyboardButton("📊 Bildirishnomalar statistika"),
+        KeyboardButton("📨 Mening bildirishnomalarim"),
+        KeyboardButton("🔄 Darhol tekshirish"),
+        KeyboardButton("⬅️ Orqaga")
+    ]
+    keyboard.add(*buttons)
+    return keyboard
+
 # Export qilinadigan funksiyalar
 __all__ = [
     'AdminMenu',
@@ -420,4 +481,9 @@ __all__ = [
     'admin_notifications',
     'admin_quick_actions',
     'admin_back',
+    'get_admin_menu',
+    'get_admin_dashboard_keyboard',
+    'get_employee_management_menu',
+    'get_employee_actions_keyboard',
+    'get_notifications_menu',
 ]

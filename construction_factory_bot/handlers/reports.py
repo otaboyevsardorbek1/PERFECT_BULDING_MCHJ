@@ -1,12 +1,13 @@
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InputFile
 
 from database.session import get_db_session
 from database import crud
 from keyboards.main_menu import get_report_period_keyboard, get_main_menu
 from utils.excel_reports import (
+    create_excel_report,
     create_warehouse_excel_report,
     create_financial_excel_report,
     create_employee_report
@@ -62,7 +63,7 @@ async def handle_report_selection(message: types.Message, state: FSMContext):
         await ReportStates.waiting_period.set()
     elif message.text == "⬅️ Orqaga":
         await message.answer("Asosiy menyu:", reply_markup=get_main_menu())
-        await state.finish()
+        await state.clear()
     else:
         await message.answer("Noto'g'ri tanlov. Iltimos, tugmalardan foydalaning.")
 
@@ -73,7 +74,7 @@ async def handle_period_selection(callback_query: types.CallbackQuery, state: FS
     
     if callback_query.data == "back_to_main":
         await callback_query.message.answer("Asosiy menyu:", reply_markup=get_main_menu())
-        await state.finish()
+        await state.clear()
         return
     
     period = callback_query.data.replace("report_", "")
@@ -125,11 +126,13 @@ async def handle_period_selection(callback_query: types.CallbackQuery, state: FS
         logger.error(f"Error generating report: {e}")
         await callback_query.message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
     
-    await state.finish()
+    await state.clear()
     await callback_query.message.answer("Hisobotlar menyusiga qaytish uchun '📈 Hisobotlar' tugmasini bosing.")
 
 async def generate_warehouse_report(message: types.Message, db, period_text: str):
     """Ombor hisobotini yaratish"""
+    
+    from sqlalchemy import func
     
     # Xom ashyo ma'lumotlarini olish
     raw_materials = db.query(crud.models.RawMaterial).all()
@@ -337,6 +340,8 @@ async def generate_financial_report(message: types.Message, db, start_date: date
 async def generate_employee_report(message: types.Message, db, start_date: date, end_date: date, period_text: str):
     """Xodimlar hisobotini yaratish"""
     
+    from sqlalchemy import func
+    
     # Xodimlarni olish
     employees = db.query(crud.models.Employee).filter(
         crud.models.Employee.status == crud.models.EmployeeStatus.ACTIVE
@@ -443,6 +448,8 @@ async def generate_employee_report(message: types.Message, db, start_date: date,
 async def generate_overall_report(message: types.Message, db, start_date: date, end_date: date, period_text: str):
     """Umumiy statistik hisobot"""
     
+    from sqlalchemy import func
+    
     # Barcha statistikani yig'ish
     warehouse_stats = crud.get_warehouse_statistics(db)
     production_stats = crud.get_production_statistics(db, start_date, end_date)
@@ -466,7 +473,6 @@ async def generate_overall_report(message: types.Message, db, start_date: date, 
         {"Ko'rsatkich": "Maosh xarajatlari", "Qiymat": f"{financial_stats['salary_costs']:,.0f} so'm"},
     ]
     
-    from utils.excel_reports import create_excel_report
     excel_file = create_excel_report(overall_data, 'overall_stats', 
                                     f'Umumiy statistika - {period_text}')
     
@@ -504,12 +510,11 @@ async def generate_overall_report(message: types.Message, db, start_date: date, 
 
 def register_handlers_reports(dp: Dispatcher):
     """Register reports handlers"""
-    dp.register_message_handler(reports_menu, lambda msg: msg.text == "📈 Hisobotlar", state="*")
-    dp.register_message_handler(handle_report_selection, 
-                               lambda msg: msg.text in ["📦 Ombor hisoboti", "🏭 Ishlab chiqarish hisoboti", 
-                                                       "💰 Moliya hisoboti", "👥 Xodimlar hisoboti", 
-                                                       "📈 Umumiy statistika", "⬅️ Orqaga"],
-                               state="*")
-    dp.register_callback_query_handler(handle_period_selection,
-                                      lambda c: c.data.startswith('report_') or c.data == 'back_to_main',
-                                      state=ReportStates.waiting_period)
+    dp.message.register(reports_menu, F.text == "📈 Hisobotlar")
+    dp.message.register(handle_report_selection, 
+                        F.text.in_(["📦 Ombor hisoboti", "🏭 Ishlab chiqarish hisoboti", 
+                                   "💰 Moliya hisoboti", "👥 Xodimlar hisoboti", 
+                                   "📈 Umumiy statistika", "⬅️ Orqaga"]))
+    dp.callback_query.register(handle_period_selection,
+                               F.data.startswith('report_') | (F.data == 'back_to_main'),
+                               ReportStates.waiting_period)

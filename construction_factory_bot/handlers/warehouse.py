@@ -1,10 +1,10 @@
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardRemove
 
 from database.db import db
-from keyboards.main_menu import get_main_menu, get_products_keyboard, get_confirm_keyboard
+from keyboards.main_menu import get_main_menu, get_confirm_keyboard
 import logging
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ async def show_warehouse_status(message: types.Message):
 
 async def add_raw_material_start(message: types.Message):
     """Yangi xom ashyo qo'shishni boshlash"""
-    await message.answer("Yangi xom ashyo nomini kiriting:", reply_markup=ReplyKeyboardRemove()) # type: ignore
+    await message.answer("Yangi xom ashyo nomini kiriting:", reply_markup=ReplyKeyboardRemove())
     await WarehouseStates.waiting_material_name.set()
 
 async def process_material_name(message: types.Message, state: FSMContext):
@@ -146,17 +146,17 @@ async def confirm_add_material(callback_query: types.CallbackQuery, state: FSMCo
             reply_markup=get_main_menu()
         )
     
-    await state.finish()
+    await state.clear()
 
 def register_handlers_warehouse(dp: Dispatcher):
-    #-- """Register warehouse handlers"""
-    dp.register_message_handler(show_warehouse_status, lambda msg: msg.text == "📦 Ombor holati", state="*")
-    dp.register_message_handler(add_raw_material_start, lambda msg: msg.text == "➕ Xom ashyo kiritish", state="*")
+    """Register warehouse handlers"""
+    dp.message.register(show_warehouse_status, F.text == "📦 Ombor holati")
+    dp.message.register(add_raw_material_start, F.text == "➕ Xom ashyo kiritish")
     
-    dp.register_message_handler(process_material_name, state=WarehouseStates.waiting_material_name)
-    dp.register_message_handler(process_material_unit, state=WarehouseStates.waiting_material_quantity)
-    dp.register_message_handler(process_material_price, state=WarehouseStates.waiting_material_price)
+    dp.message.register(process_material_name, WarehouseStates.waiting_material_name)
+    dp.message.register(process_material_unit, WarehouseStates.waiting_material_quantity)
+    dp.message.register(process_material_price, WarehouseStates.waiting_material_price)
     
-    dp.register_callback_query_handler(confirm_add_material, 
-                                      lambda c: c.data.startswith('confirm_'), 
-                                      state=WarehouseStates.confirm_add_material)
+    dp.callback_query.register(confirm_add_material, 
+                               F.data.startswith('confirm_'),
+                               WarehouseStates.confirm_add_material)

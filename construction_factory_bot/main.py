@@ -1,6 +1,6 @@
 """
 Qurilish Materiallari Korxonasi - AIOgram Bot
-Asosiy fayl
+Asosiy fayl (Aiogram v3.22)
 """
 import asyncio
 import logging
@@ -11,25 +11,14 @@ import os
 # Papka yo'llarini sozlash
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram import BaseMiddleware
-from aiogram.types import Update
+from aiogram.filters import CommandStart, Command
 
 from config import BOT_TOKEN, ADMIN_IDS, DB_NAME
 from database.session import get_db_session
 from database import models
 from utils.notifications import set_bot_instance, notification_background_task
-
-# Handlerlarni import qilish
-from handlers.start import register_handlers_start
-from handlers.warehouse import register_handlers_warehouse
-from handlers.production import register_handlers_production
-from handlers.reports import register_handlers_reports
-from handlers.admin import register_handlers_admin
-from handlers.employees import register_handlers_employees
-from handlers.notifications import register_handlers_notifications
-from handlers.sales import register_handlers_sales
 
 # =============== LOGGING KONFIGURATSIYASI ===============
 logging.basicConfig(
@@ -43,54 +32,14 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# =============== MIDDLEWARE LAR ===============
-class LoggingMiddleware(BaseMiddleware):
-    """Har bir foydalanuvchi amali uchun log yozish"""
-    
-    async def on_pre_process_update(self, update: Update, data: dict):
-        """Update dan oldin"""
-        if update.message:
-            user = update.message.from_user
-            logger.info(f"User {user.id} ({user.username}): {update.message.text}") # type: ignore
-        
-        elif update.callback_query:
-            user = update.callback_query.from_user
-            logger.info(f"User {user.id} ({user.username}): Callback {update.callback_query.data}")
-    
-    async def on_post_process_update(self, update: Update, result, data: dict):
-        """Update dan keyin"""
-        # Logging yoki monitoring qo'shish mumkin
-        pass
-
-class DatabaseMiddleware(BaseMiddleware):
-    """Har bir handler uchun database sessiyasini taqdim etish"""
-    
-    async def on_pre_process_message(self, message: types.Message, data: dict):# type: ignore
-        """Message dan oldin"""
-        data['db'] = get_db_session()
-    
-    async def on_post_process_message(self, message: types.Message, result, data: dict):# type: ignore
-        """Message dan keyin"""
-        if 'db' in data:
-            data['db'].close()
-    
-    async def on_pre_process_callback_query(self, callback_query: types.CallbackQuery, data: dict):
-        """Callback query dan oldin"""
-        data['db'] = get_db_session()
-    
-    async def on_post_process_callback_query(self, callback_query: types.CallbackQuery, result, data: dict):
-        """Callback query dan keyin"""
-        if 'db' in data:
-            data['db'].close()
-
 # =============== BOTNI ISHGA TUSHIRISH ===============
-async def on_startup(dp: Dispatcher):
+async def on_startup(bot: Bot):
     """Bot ishga tushganda"""
     
     logger.info("=== BOT ISHGA TUSHMOQDA ===")
     
     # Bot instance ni notifications moduliga o'rnatish
-    set_bot_instance(dp.bot)
+    set_bot_instance(bot)
     
     # Database jadvallarini yaratish
     try:
@@ -103,20 +52,20 @@ async def on_startup(dp: Dispatcher):
     await initialize_database()
     
     # Adminlarga bot ishga tushganligi haqida xabar
-    await send_startup_message(dp.bot)# type: ignore
+    await send_startup_message(bot)
     
     # Background tasklarni boshlash
     asyncio.create_task(notification_background_task())
     
     logger.info("✅ Bot muvaffaqiyatli ishga tushdi!")
 
-async def on_shutdown(dp: Dispatcher):
+async def on_shutdown(bot: Bot):
     """Bot to'xtaganda"""
     
     logger.info("=== BOT TO'XTAMOQDA ===")
     
     # Adminlarga bot to'xtaganligi haqida xabar
-    await send_shutdown_message(dp.bot)
+    await send_shutdown_message(bot)
     
     # Database ulanishini yopish
     models.engine.dispose()
@@ -287,7 +236,10 @@ async def send_startup_message(bot: Bot):
         f"• 📊 Hisobot va statistika\n"
         f"• 👥 Xodimlar boshqaruvi\n"
         f"• 🔔 Push bildirishnomalar\n"
-        f"• 📈 Excel va grafik hisobotlar\n\n"
+        f"• 📈 Excel va grafik hisobotlar\n"
+        f"• 📄 PDF hisobotlar\n"
+        f"• 📱 SMS xizmati\n"
+        f"• 🤖 AI bashoratlar\n\n"
         f"🎯 Bot endi foydalanishga tayyor!"
     )
     
@@ -312,10 +264,6 @@ async def send_shutdown_message(bot: Bot):
         f"🤖 Qurilish Materiallari Korxonasi Boti\n\n"
         f"🔧 Tizim xavfsiz tarzda to'xtatildi.\n"
         f"💾 Database ulanishlari yopildi.\n\n"
-        f"📊 *Oxirgi sessiya statistikasi:*\n"
-        f"• Ishlash muddati: [avtomatik hisoblash]\n"
-        f"• Bajarilgan amallar: [avtomatik hisoblash]\n"
-        f"• Yangi ma'lumotlar: [avtomatik hisoblash]\n\n"
         f"🔄 Bot qayta ishga tushirilganda xabar beriladi."
     )
     
@@ -333,17 +281,30 @@ async def send_shutdown_message(bot: Bot):
 async def main():
     """Asosiy funksiya"""
     
-    # Bot va dispatcher yaratish
+    # Bot va dispatcher yaratish (Aiogram v3)
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
-    dp = Dispatcher(bot, storage=storage)
+    dp = Dispatcher(storage=storage)
     
-    # Middleware larni qo'shish
-    dp.middleware.setup(LoggingMiddleware())
-    dp.middleware.setup(DatabaseMiddleware())
+    # Startup/shutdown handlerlarni ro'yxatdan o'tkazish (v3 uslubi)
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
     
     # Handlerlarni ro'yxatdan o'tkazish
     logger.info("Handlerlarni ro'yxatdan o'tkazish...")
+    
+    # Handler importlari - har biri o'zini register qiladi
+    from handlers.start import register_handlers_start
+    from handlers.warehouse import register_handlers_warehouse
+    from handlers.production import register_handlers_production
+    from handlers.reports import register_handlers_reports
+    from handlers.admin import register_handlers_admin
+    from handlers.employees import register_handlers_employees
+    from handlers.notifications import register_handlers_notifications
+    from handlers.sales import register_handlers_sales
+    from handlers.pdf_reports import register_handlers_pdf
+    from handlers.sms import register_handlers_sms
+    from handlers.ai_predict import register_handlers_ai
     
     register_handlers_start(dp)
     register_handlers_warehouse(dp)
@@ -353,34 +314,34 @@ async def main():
     register_handlers_employees(dp)
     register_handlers_notifications(dp)
     register_handlers_sales(dp)
+    register_handlers_pdf(dp)
+    register_handlers_sms(dp)
+    register_handlers_ai(dp)
     
     logger.info("✅ Barcha handlerlar ro'yxatdan o'tkazildi")
     
-    # Start and shutdown handlers
-    dp.register_startup_handler(on_startup)
-    dp.register_shutdown_handler(on_shutdown)
-    
     # Komandalarni o'rnatish
     await bot.set_my_commands([
-        types.BotCommand("start", "Botni ishga tushirish"),
-        types.BotCommand("help", "Yordam olish"),
-        types.BotCommand("admin", "Admin paneli"),
-        types.BotCommand("ombor", "Ombor holati"),
-        types.BotCommand("ishlabchiqarish", "Ishlab chiqarish"),
-        types.BotCommand("hisobot", "Hisobotlar"),
-        types.BotCommand("xodimlar", "Xodimlar boshqaruvi"),
-        types.BotCommand("bildirishnoma", "Bildirishnomalar"),
-        types.BotCommand("cancel", "Joriy amalni bekor qilish"),
+        types.BotCommand(command="start", description="Botni ishga tushirish"),
+        types.BotCommand(command="help", description="Yordam olish"),
+        types.BotCommand(command="admin", description="Admin paneli"),
+        types.BotCommand(command="ombor", description="Ombor holati"),
+        types.BotCommand(command="ishlabchiqarish", description="Ishlab chiqarish"),
+        types.BotCommand(command="hisobot", description="Hisobotlar"),
+        types.BotCommand(command="pdf", description="PDF hisobotlar"),
+        types.BotCommand(command="sms", description="SMS yuborish"),
+        types.BotCommand(command="ai", description="AI bashoratlar"),
+        types.BotCommand(command="xodimlar", description="Xodimlar boshqaruvi"),
+        types.BotCommand(command="bildirishnoma", description="Bildirishnomalar"),
+        types.BotCommand(command="cancel", description="Joriy amalni bekor qilish"),
     ])
     
     logger.info("✅ Bot komandalari o'rnatildi")
     
-    # Botni ishga tushirish
+    # Botni ishga tushirish (Aiogram v3)
     try:
-        await dp.start_polling()
+        await dp.start_polling(bot)
     finally:
-        await dp.storage.close()
-        await dp.storage.wait_closed()
         await bot.session.close()
 
 # =============== ENTRY POINT ===============

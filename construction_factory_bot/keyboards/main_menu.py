@@ -11,6 +11,9 @@ def get_main_menu():
         KeyboardButton("📊 Statistika"),
         KeyboardButton("➕ Xom ashyo kiritish"),
         KeyboardButton("📈 Hisobotlar"),
+        KeyboardButton("📄 PDF hisobotlar"),
+        KeyboardButton("📱 SMS xizmati"),
+        KeyboardButton("🤖 AI bashorat"),
         KeyboardButton("⚙️ Sozlamalar"),
         KeyboardButton("ℹ️ Yordam")
     ]

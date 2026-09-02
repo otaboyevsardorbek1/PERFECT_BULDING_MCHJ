@@ -1,15 +1,16 @@
 """
 Notifications Handler - Qurilish Korxonasi Bildirishnoma Tizimi
 """
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from datetime import datetime, timedelta, date
 import logging
 import asyncio
 from typing import List, Dict, Any
 
+from sqlalchemy import or_
 from database.session import get_db_session
 from database import crud, models
 from keyboards.main_menu import get_main_menu
@@ -939,58 +940,42 @@ def register_handlers_notifications(dp: Dispatcher):
     """Notification handlers ni roʻyxatdan oʻtkazish"""
     
     # Notifications menu
-    dp.register_message_handler(notifications_menu, 
-                               lambda msg: msg.text == "🔔 Bildirishnomalar", 
-                               state="*")
+    dp.message.register(notifications_menu, F.text == "🔔 Bildirishnomalar")
     
     # Create notification
-    dp.register_message_handler(create_notification_start, 
-                               lambda msg: msg.text == "📝 Yangi bildirishnoma", 
-                               state="*")
+    dp.message.register(create_notification_start, F.text == "📝 Yangi bildirishnoma")
     
     # View notifications
-    dp.register_message_handler(view_notifications, 
-                               lambda msg: msg.text == "📋 Barcha bildirishnomalar", 
-                               state="*")
+    dp.message.register(view_notifications, F.text == "📋 Barcha bildirishnomalar")
     
     # Auto notifications
-    dp.register_message_handler(auto_notifications, 
-                               lambda msg: msg.text == "⚙️ Avtomatik bildirishnomalar", 
-                               state="*")
+    dp.message.register(auto_notifications, F.text == "⚙️ Avtomatik bildirishnomalar")
     
     # Statistics
-    dp.register_message_handler(notification_statistics, 
-                               lambda msg: msg.text == "📊 Bildirishnomalar statistika", 
-                               state="*")
+    dp.message.register(notification_statistics, F.text == "📊 Bildirishnomalar statistika")
     
     # My notifications
-    dp.register_message_handler(my_notifications, 
-                               lambda msg: msg.text == "📨 Mening bildirishnomalarim", 
-                               state="*")
+    dp.message.register(my_notifications, F.text == "📨 Mening bildirishnomalarim")
     
     # Check now
-    dp.register_message_handler(check_notifications_now, 
-                               lambda msg: msg.text == "🔄 Darhol tekshirish", 
-                               state="*")
+    dp.message.register(check_notifications_now, F.text == "🔄 Darhol tekshirish")
     
     # State handlers
-    dp.register_message_handler(process_notification_title, state=NotificationStates.waiting_notification_title)
-    dp.register_message_handler(process_notification_message, state=NotificationStates.waiting_notification_message)
-    dp.register_message_handler(process_schedule_time, state=NotificationStates.waiting_notification_schedule)
+    dp.message.register(process_notification_title, NotificationStates.waiting_notification_title)
+    dp.message.register(process_notification_message, NotificationStates.waiting_notification_message)
+    dp.message.register(process_schedule_time, NotificationStates.waiting_notification_schedule)
     
     # Callback handlers
-    dp.register_callback_query_handler(notification_callback_handler,
-                                      lambda c: c.data.startswith('notif_') or 
-                                               c.data.startswith('type_') or
-                                               c.data.startswith('recipient_') or
-                                               c.data.startswith('priority_') or
-                                               c.data.startswith('schedule_') or
-                                               c.data.startswith('confirm_notif_') or
-                                               c.data.startswith('view_') or
-                                               c.data.startswith('auto_') or
-                                               c.data.startswith('my_notifs_'),
-                                      state="*")
+    dp.callback_query.register(notification_callback_handler,
+                               F.data.startswith('notif_') | 
+                               F.data.startswith('type_') |
+                               F.data.startswith('recipient_') |
+                               F.data.startswith('priority_') |
+                               F.data.startswith('schedule_') |
+                               F.data.startswith('confirm_notif_') |
+                               F.data.startswith('view_') |
+                               F.data.startswith('auto_') |
+                               F.data.startswith('my_notifs_'))
     
     # Background task
-    from main import bot
     asyncio.create_task(background_notification_checker())

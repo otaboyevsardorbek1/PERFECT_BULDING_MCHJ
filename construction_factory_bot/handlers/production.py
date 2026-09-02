@@ -1,10 +1,10 @@
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardRemove
 
 from database.db import db
-from keyboards.main_menu import get_main_menu, get_production_menu, get_products_keyboard
+from keyboards.main_menu import get_main_menu, get_production_menu, get_products_keyboard, get_confirm_keyboard
 import logging
 
 logger = logging.getLogger(__name__)
@@ -58,10 +58,10 @@ async def process_product_selection(callback_query: types.CallbackQuery, state: 
             await ProductionStates.waiting_quantity.set()
         else:
             await callback_query.message.answer("❌ Mahsulot topilmadi.")
-            await state.finish()
+            await state.clear()
     else:
         await callback_query.message.answer("❌ Noto'g'ri tanlov.")
-        await state.finish()
+        await state.clear()
 
 async def process_quantity(message: types.Message, state: FSMContext):
     """Ishlab chiqarish miqdorini qabul qilish"""
@@ -89,7 +89,7 @@ async def process_quantity(message: types.Message, state: FSMContext):
         
         if not formula_items:
             await message.answer("❌ Bu mahsulot uchun formula topilmadi.")
-            await state.finish()
+            await state.clear()
             return
         
         # Xarajatlarni hisoblash
@@ -166,11 +166,10 @@ async def process_quantity(message: types.Message, state: FSMContext):
         await message.answer(response, parse_mode="Markdown")
         
         if can_produce:
-            from keyboards.main_menu import get_confirm_keyboard
             await message.answer("Ishlab chiqarishni boshlaymizmi?", reply_markup=get_confirm_keyboard())
             await ProductionStates.confirm_production.set()
         else:
-            await state.finish()
+            await state.clear()
             
     except ValueError:
         await message.answer("❌ Noto'g'ri format. Faqat raqam kiriting:")
@@ -230,8 +229,7 @@ async def confirm_production(callback_query: types.CallbackQuery, state: FSMCont
                 f"📋 Buyurtma raqami: #{order_id}\n"
                 f"🏭 Mahsulot: {data['product_name']}\n"
                 f"📦 Miqdor: {data['quantity']} birlik\n"
-                f"💰 Jami xarajat: {data['total_cost']:,.0f} so'm\n"
-                f"📅 Sana: {db.cursor.execute('SELECT datetime()').fetchone()[0]}\n\n"
+                f"💰 Jami xarajat: {data['total_cost']:,.0f} so'm\n\n"
                 f"🎉 Tabriklaymiz! Mahsulotlar omboringizga qo'shildi."
             )
             
@@ -249,7 +247,7 @@ async def confirm_production(callback_query: types.CallbackQuery, state: FSMCont
             reply_markup=get_main_menu()
         )
     
-    await state.finish()
+    await state.clear()
 
 async def show_production_statistics(message: types.Message):
     """Ishlab chiqarish statistikasi"""
@@ -306,16 +304,16 @@ async def show_production_statistics(message: types.Message):
 
 def register_handlers_production(dp: Dispatcher):
     """Register production handlers"""
-    dp.register_message_handler(production_menu, lambda msg: msg.text == "🏭 Ishlab chiqarish", state="*")
-    dp.register_message_handler(new_production_order, lambda msg: msg.text == "🔄 Yangi buyurtma", state="*")
-    dp.register_message_handler(show_production_statistics, lambda msg: msg.text == "📊 Ishlab chiqarish statistikasi", state="*")
+    dp.message.register(production_menu, F.text == "🏭 Ishlab chiqarish")
+    dp.message.register(new_production_order, F.text == "🔄 Yangi buyurtma")
+    dp.message.register(show_production_statistics, F.text == "📊 Ishlab chiqarish statistikasi")
     
-    dp.register_callback_query_handler(process_product_selection, 
-                                      lambda c: c.data.startswith('product_'), 
-                                      state=ProductionStates.waiting_product_selection)
+    dp.callback_query.register(process_product_selection, 
+                               F.data.startswith('product_'),
+                               ProductionStates.waiting_product_selection)
     
-    dp.register_message_handler(process_quantity, state=ProductionStates.waiting_quantity)
+    dp.message.register(process_quantity, ProductionStates.waiting_quantity)
     
-    dp.register_callback_query_handler(confirm_production, 
-                                      lambda c: c.data.startswith('confirm_'), 
-                                      state=ProductionStates.confirm_production)
+    dp.callback_query.register(confirm_production, 
+                               F.data.startswith('confirm_'),
+                               ProductionStates.confirm_production)

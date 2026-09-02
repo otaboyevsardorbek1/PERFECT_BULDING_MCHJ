@@ -1,13 +1,13 @@
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import CommandStart, Command
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.filters import CommandStart, Command
 
 from keyboards.main_menu import get_main_menu
 from config import ADMIN_IDS
 
 async def cmd_start(message: types.Message, state: FSMContext):
     """Start command handler"""
-    await state.finish()
+    await state.clear()
     
     # Foydalanuvchini ADMIN_IDS ro'yxatida tekshirish
     is_admin = message.from_user.id in ADMIN_IDS
@@ -70,12 +70,12 @@ async def cmd_help(message: types.Message):
 
 async def cmd_cancel(message: types.Message, state: FSMContext):
     """Cancel operation"""
-    await state.finish()
+    await state.clear()
     await message.answer("❌ Amal bekor qilindi.", reply_markup=get_main_menu())
 
 def register_handlers_start(dp: Dispatcher):
     """Register start handlers"""
-    dp.register_message_handler(cmd_start, CommandStart(), state="*")
-    dp.register_message_handler(cmd_help, commands=['help'], state="*")
-    dp.register_message_handler(cmd_cancel, commands=['cancel'], state="*")
-    dp.register_message_handler(cmd_cancel, lambda msg: msg.text in ["⬅️ Orqaga", "❌ Bekor qilish"], state="*")
+    dp.message.register(cmd_start, CommandStart())
+    dp.message.register(cmd_help, Command("help"))
+    dp.message.register(cmd_cancel, Command("cancel"))
+    dp.message.register(cmd_cancel, F.text.in_(["⬅️ Orqaga", "❌ Bekor qilish"]))

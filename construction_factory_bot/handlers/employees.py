@@ -1,9 +1,9 @@
 """
 Employees Management - Qurilish Korxonasi Xodimlar Boshqaruvi
 """
-from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, Dispatcher, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from datetime import datetime, date, timedelta
 import logging
@@ -14,7 +14,7 @@ from database import crud, models
 from keyboards.main_menu import get_main_menu
 from keyboards.admin_menu import get_employee_management_menu, get_employee_actions_keyboard
 from config import EMPLOYEE_POSITIONS, ADMIN_IDS
-from utils.excel_reports import create_employee_excel_report
+from utils.excel_reports import create_employee_report as create_employee_excel_report
 from utils.charts import create_employee_chart
 
 logger = logging.getLogger(__name__)
@@ -1122,87 +1122,72 @@ def register_handlers_employees(dp: Dispatcher):
     """Employee handlers ni ro'yxatdan o'tkazish"""
     
     # Employee management menu
-    dp.register_message_handler(employee_management, 
-                               lambda msg: msg.text == "👥 Xodimlar boshqaruvi", 
-                               state="*")
+    dp.message.register(employee_management, F.text == "👥 Xodimlar boshqaruvi")
     
     # Add employee
-    dp.register_message_handler(add_employee_start, 
-                               lambda msg: msg.text == "➕ Yangi xodim", 
-                               state="*")
+    dp.message.register(add_employee_start, F.text == "➕ Yangi xodim")
     
     # View employees
-    dp.register_message_handler(view_employees, 
-                               lambda msg: msg.text == "📋 Xodimlar ro'yxati", 
-                               state="*")
+    dp.message.register(view_employees, F.text == "📋 Xodimlar ro'yxati")
     
     # My profile
-    dp.register_message_handler(lambda msg: employee_details(msg), 
-                               lambda msg: msg.text == "👤 Mening profilim", 
-                               state="*")
+    dp.message.register(employee_details, F.text == "👤 Mening profilim")
     
     # Work hours
-    dp.register_message_handler(lambda msg: add_work_hours_start(msg, None), 
-                               lambda msg: msg.text == "⏱️ Ish vaqti kiritish", 
-                               state="*")
+    dp.message.register(add_work_hours_start, F.text == "⏱️ Ish vaqti kiritish")
     
     # Salary payment
-    dp.register_message_handler(lambda msg: salary_payment_start(msg, None), 
-                               lambda msg: msg.text == "💰 Maosh to'lash", 
-                               state="*")
+    dp.message.register(salary_payment_start, F.text == "💰 Maosh to'lash")
     
     # Statistics
-    dp.register_message_handler(employee_statistics, 
-                               lambda msg: msg.text == "📊 Xodimlar statistika", 
-                               state="*")
+    dp.message.register(employee_statistics, F.text == "📊 Xodimlar statistika")
     
     # State handlers
-    dp.register_message_handler(process_full_name, state=EmployeeStates.waiting_full_name)
-    dp.register_message_handler(process_phone_number, state=EmployeeStates.waiting_phone_number)
-    dp.register_message_handler(process_salary, state=EmployeeStates.waiting_salary)
-    dp.register_message_handler(process_hire_date, state=EmployeeStates.waiting_hire_date)
-    dp.register_message_handler(process_telegram_id, state=EmployeeStates.waiting_telegram_id)
-    dp.register_message_handler(process_work_date, state=EmployeeStates.waiting_work_date)
-    dp.register_message_handler(process_start_time, state=EmployeeStates.waiting_start_time)
-    dp.register_message_handler(process_end_time, state=EmployeeStates.waiting_end_time)
-    dp.register_message_handler(process_overtime, state=EmployeeStates.waiting_overtime)
-    dp.register_message_handler(process_bonus, state=EmployeeStates.waiting_bonus)
-    dp.register_message_handler(process_deduction, state=EmployeeStates.waiting_deduction)
-    dp.register_message_handler(process_search_query, state=EmployeeStates.waiting_search_query)
+    dp.message.register(process_full_name, EmployeeStates.waiting_full_name)
+    dp.message.register(process_phone_number, EmployeeStates.waiting_phone_number)
+    dp.message.register(process_salary, EmployeeStates.waiting_salary)
+    dp.message.register(process_hire_date, EmployeeStates.waiting_hire_date)
+    dp.message.register(process_telegram_id, EmployeeStates.waiting_telegram_id)
+    dp.message.register(process_work_date, EmployeeStates.waiting_work_date)
+    dp.message.register(process_start_time, EmployeeStates.waiting_start_time)
+    dp.message.register(process_end_time, EmployeeStates.waiting_end_time)
+    dp.message.register(process_overtime, EmployeeStates.waiting_overtime)
+    dp.message.register(process_bonus, EmployeeStates.waiting_bonus)
+    dp.message.register(process_deduction, EmployeeStates.waiting_deduction)
+    dp.message.register(process_search_query, EmployeeStates.waiting_search_query)
     
     # Callback handlers
-    dp.register_callback_query_handler(employee_callback_handler,
-                                      lambda c: c.data.startswith('emp_') or 
-                                               c.data.startswith('position_') or
-                                               c.data.startswith('dept_') or
-                                               c.data.startswith('month_') or
-                                               c.data.startswith('year_'),
-                                      state="*")
+    dp.callback_query.register(employee_callback_handler,
+                               F.data.startswith('emp_') | 
+                               F.data.startswith('position_') |
+                               F.data.startswith('dept_') |
+                               F.data.startswith('month_') |
+                               F.data.startswith('year_'))
     
-    dp.register_callback_query_handler(process_position, 
-                                      lambda c: c.data.startswith('position_'), 
-                                      state=EmployeeStates.waiting_position)
+    dp.callback_query.register(process_position, 
+                               F.data.startswith('position_'),
+                               EmployeeStates.waiting_position)
     
-    dp.register_callback_query_handler(process_department, 
-                                      lambda c: c.data.startswith('dept_'), 
-                                      state=EmployeeStates.waiting_department)
+    dp.callback_query.register(process_department, 
+                               F.data.startswith('dept_'),
+                               EmployeeStates.waiting_department)
     
-    dp.register_callback_query_handler(confirm_add_employee, 
-                                      lambda c: c.data.startswith('confirm_add_'), 
-                                      state=EmployeeStates.confirm_add_employee)
+    dp.callback_query.register(confirm_add_employee, 
+                               F.data.startswith('confirm_add_'),
+                               EmployeeStates.confirm_add_employee)
     
-    dp.register_callback_query_handler(save_work_hours, 
-                                      lambda c: c.data in ['save_work_hours', 'cancel_work_hours'], 
-                                      state=EmployeeStates.confirm_work_hours)
+    dp.callback_query.register(save_work_hours, 
+                               F.data.in_(['save_work_hours', 'cancel_work_hours']),
+                               EmployeeStates.confirm_work_hours)
     
-    dp.register_callback_query_handler(process_salary_month, 
-                                      lambda c: c.data.startswith('month_') or c.data == 'back_to_employee', 
-                                      state=EmployeeStates.waiting_salary_month)
+    dp.callback_query.register(process_salary_month, 
+                               F.data.startswith('month_') | (F.data == 'back_to_employee'),
+                               EmployeeStates.waiting_salary_month)
     
-    dp.register_callback_query_handler(process_salary_year, 
-                                      lambda c: c.data.startswith('year_') or c.data == 'back_to_month', 
-                                      state=EmployeeStates.waiting_salary_year)
+    dp.callback_query.register(process_salary_year, 
+                               F.data.startswith('year_') | (F.data == 'back_to_month'),
+                               EmployeeStates.waiting_salary_year)
     
-    dp.register_callback_query_handler(confirm_salary_payment, 
-                                      lambda c: c.data.startswith('confirm_salary_'), 
-                                      state=EmployeeStates.confirm_salary_payment)
+    dp.callback_query.register(confirm_salary_payment, 
+                               F.data.startswith('confirm_salary_'),
+                               EmployeeStates.confirm_salary_payment)

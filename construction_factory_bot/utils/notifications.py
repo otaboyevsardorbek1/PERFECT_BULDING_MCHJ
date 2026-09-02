@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 import asyncio
 
 from aiogram import Bot
-from aiogram.types import ParseMode
+from aiogram.enums import ParseMode
 from sqlalchemy.orm import Session
 
 from database.session import get_db_session

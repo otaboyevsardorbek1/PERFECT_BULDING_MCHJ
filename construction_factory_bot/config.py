@@ -29,6 +29,7 @@ DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NA
 
 # SQLite uchun (agar PostgreSQL bo'lmasa)
 SQLITE_DB_PATH = "database/construction.db"
+DB_PATH = SQLITE_DB_PATH  # db.py foydalanadi
 SQLITE_URL = f"sqlite:///{SQLITE_DB_PATH}"
 
 # Qaysi databaseni ishlatish
@@ -65,6 +66,19 @@ MATERIAL_UNITS = {
 }
 
 PRODUCT_CATEGORIES = {
+    "sement": "Sement mahsulotlari",
+    "rodbin": "Metall mahsulotlar",
+    "kafel": "Kafel va plitka",
+    "pol": "Pol qoplamalari",
+    "gips": "Gips mahsulotlari",
+    "keramika": "Keramika mahsulotlari",
+    "boshqa": "Boshqa qurilish materiallari"
+}
+
+# =============== SOTUVLAR SOZLAMALARI ===============
+ADMINS = ADMIN_IDS  # sales.py foydalanadi
+
+PRODUCT_TYPES = {
     "sement": "Sement mahsulotlari",
     "rodbin": "Metall mahsulotlar",
     "kafel": "Kafel va plitka",
@@ -216,11 +230,11 @@ SYSTEM_SETTINGS = {
 
 # =============== INTEGRATSIYA SOZLAMALARI ===============
 INTEGRATION_SETTINGS = {
-    # SMS yuborish uchun (agar kerak bo'lsa)
-    "sms_enabled": False,
+    # SMS yuborish uchun (Eskiz.uz)
+    "sms_enabled": os.getenv("SMS_ENABLED", "false").lower() == "true",
     "sms_provider": "eskiz.uz",
     "sms_api_key": os.getenv("SMS_API_KEY", ""),
-    "sms_sender": "KORXONA",
+    "sms_sender": os.getenv("SMS_SENDER", "KORXONA"),
     
     # Email yuborish uchun
     "email_enabled": False,
