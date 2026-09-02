@@ -462,16 +462,12 @@ async def remove_admin(callback_query: types.CallbackQuery, state: FSMContext):
         await callback_query.message.answer("❌ Kamida bitta admin bo'lishi kerak!")
         return
     
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    for admin in admins:
-        if admin.telegram_id != MAIN_ADMIN_ID:
-            keyboard.add(
-                InlineKeyboardButton(
-                    f"➖ {admin.full_name} (ID: {admin.telegram_id})",
-                    callback_data=f"confirm_remove_admin_{admin.id}"
-                )
-            )
-    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back"))
+    admin_rows = [
+        [InlineKeyboardButton(text=f"➖ {admin.full_name} (ID: {admin.telegram_id})", callback_data=f"confirm_remove_admin_{admin.id}")] 
+        for admin in admins if admin.telegram_id != MAIN_ADMIN_ID
+    ]
+    admin_rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=admin_rows)
     
     await callback_query.message.answer(
         "➖ **ADMINNI OLIB TASHLASH**\n\n"

@@ -428,11 +428,12 @@ async def employee_details(callback_query: types.CallbackQuery, employee_id: int
                  InlineKeyboardButton(text="⏱️ Ish vaqti", callback_data=f"emp_work_{employee.id}")],
                 [InlineKeyboardButton(text="💰 Maosh to'lash", callback_data=f"emp_salary_{employee.id}"),
                  InlineKeyboardButton(text="📊 Statistika", callback_data=f"emp_stats_{employee.id}")],
+                [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="emp_back")],
             ])
         else:
-            keyboard = None
-        
-        keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="emp_back"))
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="emp_back")],
+            ])
         
         await callback_query.message.answer(details_text, parse_mode="Markdown", reply_markup=keyboard)
 
