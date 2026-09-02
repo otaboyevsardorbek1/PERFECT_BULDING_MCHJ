@@ -865,11 +865,10 @@ async def send_birthday_greetings():
     
     with get_db_session() as db:
         # Bugun tug'ilgan xodimlarni topish
-        # (Eslatma: Employee modelida tug'ilgan kuni maydoni yo'q, 
+        # (Eslatma: Employee modelida tug'ilgan kuni maydoni yo'q,
         # ammo siz qo'shishingiz mumkin yoki boshqa usuldan foydalanishingiz mumkin)
-        
-        # Demo uchun:
-        birthday_employees = []  # Bu yerda bugun tug'ilgan xodimlar ro'yxati
+        # Hozircha bu funksiya xodimlar modeliga birth_date qo'shilgandan keyin ishlaydi
+        birthday_employees = []
         
         if birthday_employees:
             for employee in birthday_employees:

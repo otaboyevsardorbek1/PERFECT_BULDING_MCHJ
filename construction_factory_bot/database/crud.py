@@ -234,6 +234,25 @@ def get_financial_statistics(db: Session, start_date: date, end_date: date) -> D
         "profit_margin": (net_profit / total_sales_amount * 100) if total_sales_amount > 0 else 0  # type: ignore
     }
 
+# =============== Tizim loglari CRUD ===============
+def create_system_log(db: Session, user_id: int = None, user_name: str = None,
+                     action: str = "", module: str = "",
+                     details: str = None, ip_address: str = None) -> models.SystemLog:
+    """Tizim logini yaratish"""
+    log = models.SystemLog(
+        user_id=user_id,
+        user_name=user_name,
+        action=action,
+        module=module,
+        details=details,
+        ip_address=ip_address
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+
 # =============== Bildirishnomalar CRUD ===============
 def create_notification(db: Session, notification_data: Dict) -> models.Notification:
     """Yangi bildirishnoma yaratish"""

@@ -6,6 +6,8 @@ import os
 import sys
 import pytest
 from datetime import datetime, timedelta
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # Loyiha yo'llarini qo'shish
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,32 +29,36 @@ def event_loop():
 
 @pytest.fixture(scope="function")
 def db_session():
-    """Database sessiya fixture"""
-    from database.session import get_db_session
+    """Database sessiya fixture - har bir test uchun alohida in-memory DB"""
     from database import models
-    
-    # Test database yaratish
-    session = get_db_session()
-    
+
+    # Har bir test uchun yangi in-memory SQLite database yaratish
+    test_engine = create_engine("sqlite:///:memory:", echo=False)
+    models.Base.metadata.create_all(bind=test_engine)
+    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    session = TestSession()
+
     yield session
-    
-    # Tozalash
+
+    # Tozalash - sessionni yopish va engine ni dispose qilish
     session.close()
+    models.Base.metadata.drop_all(bind=test_engine)
+    test_engine.dispose()
 
 
 @pytest.fixture(scope="function")
 def test_db():
-    """Test database fixture"""
+    """Test database fixture - in-memory DB bilan modellarni qaytaradi"""
     from database import models
-    from database.session import get_db_session
-    
-    # Database jadvallarini yaratish
-    models.Base.metadata.create_all(bind=models.engine)
-    
+
+    test_engine = create_engine("sqlite:///:memory:", echo=False)
+    models.Base.metadata.create_all(bind=test_engine)
+    TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
     yield models
-    
-    # Tozalash
-    models.Base.metadata.drop_all(bind=models.engine)
+
+    models.Base.metadata.drop_all(bind=test_engine)
+    test_engine.dispose()
 
 
 @pytest.fixture

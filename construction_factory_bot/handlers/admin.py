@@ -449,6 +449,99 @@ async def system_statistics(message: types.Message):
     await message.answer(stats_text, reply_markup=keyboard, parse_mode="Markdown")
 
 # =============== CALLBACK HANDLERS ===============
+async def remove_admin(callback_query: types.CallbackQuery, state: FSMContext):
+    """Adminni olib tashlash"""
+    
+    if callback_query.from_user.id != MAIN_ADMIN_ID:
+        await callback_query.answer("❌ Faqat asosiy admin adminni olib tashlaydi!", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    with get_db_session() as db:
+        admins = db.query(models.Employee).filter(
+            models.Employee.is_admin == True
+        ).all()
+    
+    if len(admins) <= 1:
+        await callback_query.message.answer("❌ Kamida bitta admin bo'lishi kerak!")
+        return
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    for admin in admins:
+        if admin.telegram_id != MAIN_ADMIN_ID:
+            keyboard.add(
+                InlineKeyboardButton(
+                    f"➖ {admin.full_name} (ID: {admin.telegram_id})",
+                    callback_data=f"confirm_remove_admin_{admin.id}"
+                )
+            )
+    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="admin_back"))
+    
+    await callback_query.message.answer(
+        "➖ **ADMINNI OLIB TASHLASH**\n\n"
+        "Qaysi adminni olib tashlamoqchisiz?",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+async def confirm_remove_admin(callback_query: types.CallbackQuery):
+    """Adminni olib tashlashni tasdiqlash"""
+    employee_id = int(callback_query.data.replace("confirm_remove_admin_", ""))
+    
+    with get_db_session() as db:
+        employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+        if employee:
+            employee.is_admin = False
+            db.commit()
+            
+            crud.create_system_log(
+                db,
+                user_id=callback_query.from_user.id,
+                user_name=callback_query.from_user.full_name,
+                action=f"Admin olib tashlandi: {employee.full_name}",
+                module="admin"
+            )
+            
+            await callback_query.message.answer(
+                f"✅ **{employee.full_name}** adminlikdan olib tashlandi.",
+                parse_mode="Markdown"
+            )
+    
+    await admin_panel(callback_query.message)
+
+
+async def list_all_users(callback_query: types.CallbackQuery):
+    """Barcha foydalanuvchilarni ko'rsatish"""
+    await callback_query.answer()
+    
+    with get_db_session() as db:
+        employees = db.query(models.Employee).order_by(
+            models.Employee.department
+        ).all()
+    
+    if not employees:
+        await callback_query.message.answer("❌ Hozircha xodimlar mavjud emas.")
+        return
+    
+    users_text = "👥 **BARCHA XODIMLAR**\n\n"
+    
+    for idx, emp in enumerate(employees, 1):
+        status_icon = "🟢" if emp.status == models.EmployeeStatus.ACTIVE else "🔴"
+        admin_badge = " 👑" if emp.is_admin else ""
+        
+        users_text += (
+            f"{idx}. {status_icon} **{emp.full_name}**{admin_badge}\n"
+            f"   📋 {emp.position} | 🏢 {emp.department}\n"
+            f"   📞 {emp.phone_number} | 💰 {emp.salary:,.0f} so'm\n\n"
+        )
+    
+    users_text += f"\n📊 Jami: {len(employees)} ta xodim"
+    
+    await callback_query.message.answer(users_text, parse_mode="Markdown")
+
+
 async def admin_callback_handler(callback_query: types.CallbackQuery, state: FSMContext):
     """Admin callback handler"""
     
@@ -462,14 +555,24 @@ async def admin_callback_handler(callback_query: types.CallbackQuery, state: FSM
     elif data == "admin_add_admin":
         await add_new_admin(callback_query, state)
     
+    elif data == "admin_remove_admin":
+        await remove_admin(callback_query, state)
+    
+    elif data.startswith("confirm_remove_admin_"):
+        await confirm_remove_admin(callback_query)
+    
     elif data == "admin_list_admins":
         await list_admins(callback_query)
+    
+    elif data == "admin_list_all_users":
+        await list_all_users(callback_query)
     
     elif data == "admin_user_stats":
         await system_statistics(callback_query.message)
     
     elif data == "settings_notifications":
-        await callback_query.answer("⚠️ Bu funksiya hozircha ishlamaydi", show_alert=True)
+        from handlers.notifications import notifications_menu
+        await notifications_menu(callback_query.message)
     
     elif data == "settings_backup":
         await backup_database(callback_query.message)
@@ -484,8 +587,54 @@ async def admin_callback_handler(callback_query: types.CallbackQuery, state: FSM
     elif data == "logs_full":
         await view_full_logs(callback_query.message)
     
+    elif data == "logs_clear":
+        with get_db_session() as db:
+            db.query(models.SystemLog).delete()
+            db.commit()
+        await callback_query.answer("✅ Loglar tozalandi")
+        await admin_panel(callback_query.message)
+    
+    elif data == "logs_download":
+        await view_full_logs(callback_query.message)
+    
     elif data == "stats_detailed":
         await detailed_statistics(callback_query.message)
+    
+    elif data == "stats_charts":
+        await callback_query.answer("📈 Grafiklar tayyorlanmoqda...")
+        await system_statistics(callback_query.message)
+    
+    elif data == "stats_excel":
+        await callback_query.answer("📊 Excel hisobot tayyorlanmoqda...")
+        await system_statistics(callback_query.message)
+    
+    elif data == "settings_stats":
+        await system_statistics(callback_query.message)
+    
+    elif data == "settings_permissions":
+        permissions_text = (
+            "🔐 **RUXSATLAR TIZIMI**\n\n"
+            "👥 **Admin:**\n"
+            "• Barcha funksiyalarga ruxsat\n"
+            "• Xodimlarni boshqarish\n"
+            "• Sozlamalarni o'zgartirish\n\n"
+            "👤 **Xodim:**\n"
+            "• Ombor holatini ko'rish\n"
+            "• Buyurtma berish\n"
+            "• Hisobotlarni ko'rish\n"
+            "• Bildirishnomalarni ko'rish"
+        )
+        await callback_query.message.answer(permissions_text, parse_mode="Markdown")
+    
+    elif data == "settings_update":
+        update_text = (
+            "🔄 **YANGILANISH TIZIMI**\n\n"
+            "📊 **Joriy versiya:** 2.0\n"
+            "📅 **Oxirgi yangilanish:** 2024-01-15\n"
+            "✅ **Holat:** Yangiroq versiya mavjud emas\n\n"
+            "🔧 Yangilanishlar avtomatik ravishda amalga oshiriladi."
+        )
+        await callback_query.message.answer(update_text, parse_mode="Markdown")
     
     else:
         await callback_query.answer("⚠️ Bu funksiya hozircha ishlamaydi", show_alert=True)

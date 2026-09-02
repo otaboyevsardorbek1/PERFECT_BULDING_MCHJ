@@ -967,9 +967,11 @@ async def employee_callback_handler(callback_query: types.CallbackQuery, state: 
         await edit_employee_start(callback_query, employee_id, state)
     
     elif data.startswith("emp_work_"):
+        employee_id = int(data.replace("emp_work_", ""))
         await add_work_hours_start(callback_query, state)
     
     elif data.startswith("emp_salary_"):
+        employee_id = int(data.replace("emp_salary_", ""))
         await salary_payment_start(callback_query, state)
     
     elif data.startswith("emp_stats_"):
@@ -986,7 +988,10 @@ async def employee_callback_handler(callback_query: types.CallbackQuery, state: 
         await generate_employee_chart(callback_query.message)
     
     elif data == "emp_search":
-        await search_employee_start(callback_query.message, state)
+        await callback_query.answer()
+        await callback_query.message.answer("Qidiruv so'zini kiriting (ism, familiya, lavozim yoki bo'lim):", 
+                                            reply_markup=ReplyKeyboardRemove())
+        await EmployeeStates.waiting_search_query.set()
     
     elif data == "emp_stats_chart":
         await generate_employee_chart(callback_query.message)
@@ -994,8 +999,45 @@ async def employee_callback_handler(callback_query: types.CallbackQuery, state: 
     elif data == "emp_stats_excel":
         await generate_employee_excel(callback_query.message)
     
+    elif data.startswith("edit_field_"):
+        await process_edit_field(callback_query, state)
+    
+    elif data.startswith("edit_status_"):
+        await process_edit_status(callback_query, state)
+    
+    elif data.startswith("emp_delete_"):
+        employee_id = int(data.replace("emp_delete_", ""))
+        await callback_query.answer()
+        with get_db_session() as db:
+            employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+            if employee:
+                employee.status = models.EmployeeStatus.FIRED
+                db.commit()
+                await callback_query.message.answer(
+                    f"✅ **{employee.full_name}** ishdan bo'shatildi.",
+                    parse_mode="Markdown",
+                    reply_markup=get_employee_management_menu()
+                )
+    
+    elif data == "emp_top_active":
+        with get_db_session() as db:
+            employees = db.query(models.Employee).filter(
+                models.Employee.status == models.EmployeeStatus.ACTIVE
+            ).order_by(models.Employee.salary.desc()).limit(5).all()
+            if not employees:
+                await callback_query.message.answer("📭 Xodimlar topilmadi.")
+            else:
+                text = "🏆 **ENG FAOL XODIMLAR**\n\n"
+                for idx, emp in enumerate(employees, 1):
+                    text += f"{idx}. **{emp.full_name}** - {emp.position} ({emp.salary:,.0f} so'm)\n"
+                await callback_query.message.answer(text, parse_mode="Markdown")
+    
+    elif data == "view_search_results":
+        await callback_query.answer()
+        await view_employees(callback_query.message)
+    
     else:
-        await callback_query.answer("⚠️ Bu funksiya hozircha ishlamaydi", show_alert=True)
+        await callback_query.answer("⚠️ Noto'g'ri buyruq", show_alert=True)
 
 # =============== YORDAMCHI FUNKSIYALAR ===============
 async def generate_employee_excel(message: types.Message):
@@ -1116,6 +1158,206 @@ async def process_search_query(message: types.Message, state: FSMContext):
     await state.update_data(search_results=employees)
     await message.answer(search_results, parse_mode="Markdown", reply_markup=keyboard)
     await state.finish()
+
+# =============== EDIT EMPLOYEE ===============
+async def edit_employee_start(callback_query: types.CallbackQuery, employee_id: int, state: FSMContext):
+    """Xodimni tahrirlashni boshlash"""
+    await callback_query.answer()
+    
+    with get_db_session() as db:
+        employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+        
+        if not employee:
+            await callback_query.message.answer("❌ Xodim topilmadi.")
+            return
+        
+        await state.update_data(editing_employee_id=employee_id)
+        
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("👤 Ism", callback_data=f"edit_field_full_name"),
+            InlineKeyboardButton("📞 Telefon", callback_data=f"edit_field_phone"),
+            InlineKeyboardButton("📋 Lavozim", callback_data=f"edit_field_position"),
+            InlineKeyboardButton("🏢 Bo'lim", callback_data=f"edit_field_department"),
+            InlineKeyboardButton("💰 Maosh", callback_data=f"edit_field_salary"),
+            InlineKeyboardButton("📊 Holat", callback_data=f"edit_field_status"),
+            InlineKeyboardButton("⬅️ Orqaga", callback_data=f"emp_back")
+        )
+        
+        await callback_query.message.answer(
+            f"✏️ **{employee.full_name}** ni tahrirlash\n\n"
+            f"Qaysi ma'lumotni o'zgartirmoqchisiz?",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+
+
+async def process_edit_field(callback_query: types.CallbackQuery, state: FSMContext):
+    """Tahrirlash maydonini tanlash"""
+    await callback_query.answer()
+    
+    field = callback_query.data.replace("edit_field_", "")
+    
+    field_labels = {
+        "full_name": "Yangi ismni kiriting:",
+        "phone": "Yangi telefon raqamini kiriting (+998901234567):",
+        "position": "Yangi lavozimni kiriting:",
+        "department": "Yangi bo'limni kiriting:",
+        "salary": "Yangi maoshni kiriting (so'mda):",
+        "status": "Yangi holatni tanlang:"
+    }
+    
+    await state.update_data(edit_field=field)
+    
+    if field == "status":
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("🟢 Faol", callback_data="edit_status_ACTIVE"),
+            InlineKeyboardButton("🟡 Ta'tilda", callback_data="edit_status_ON_LEAVE"),
+            InlineKeyboardButton("🔴 Ishdan bo'shatilgan", callback_data="edit_status_FIRED"),
+            InlineKeyboardButton("🟣 Dam olish", callback_data="edit_status_VACATION")
+        )
+        await callback_query.message.answer(field_labels.get(field, "Qiymatni kiriting:"), reply_markup=keyboard)
+    else:
+        await callback_query.message.answer(field_labels.get(field, "Qiymatni kiriting:"))
+    
+    await EmployeeStates.waiting_edit_value.set()
+
+
+async def process_edit_value(message: types.Message, state: FSMContext):
+    """Tahrirlash qiymatini qabul qilish"""
+    data = await state.get_data()
+    employee_id = data.get('editing_employee_id')
+    field = data.get('edit_field')
+    value = message.text
+    
+    try:
+        with get_db_session() as db:
+            employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+            
+            if not employee:
+                await message.answer("❌ Xodim topilmadi.")
+                await state.finish()
+                return
+            
+            if field == "salary":
+                value = float(value)
+            elif field == "full_name":
+                employee.full_name = value
+            elif field == "phone":
+                employee.phone_number = value
+            elif field == "position":
+                employee.position = value
+            elif field == "department":
+                employee.department = value
+            
+            if field != "status":
+                setattr(employee, field if field != "phone" else "phone_number", value)
+            
+            db.commit()
+            
+            crud.create_system_log(
+                db,
+                user_id=message.from_user.id,
+                user_name=message.from_user.full_name,
+                action=f"Xodim tahrirlandi: {employee.full_name} - {field}",
+                module="employees"
+            )
+        
+        await message.answer(
+            f"✅ **{employee.full_name}** ma'lumotlari yangilandi!",
+            reply_markup=get_employee_management_menu(),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await message.answer(f"❌ Xatolik: {str(e)}", reply_markup=get_employee_management_menu())
+    
+    await state.finish()
+
+
+async def process_edit_status(callback_query: types.CallbackQuery, state: FSMContext):
+    """Xodim holatini o'zgartirish"""
+    await callback_query.answer()
+    
+    status_str = callback_query.data.replace("edit_status_", "")
+    status_map = {
+        "ACTIVE": models.EmployeeStatus.ACTIVE,
+        "ON_LEAVE": models.EmployeeStatus.ON_LEAVE,
+        "FIRED": models.EmployeeStatus.FIRED,
+        "VACATION": models.EmployeeStatus.VACATION
+    }
+    
+    new_status = status_map.get(status_str)
+    if not new_status:
+        await callback_query.message.answer("❌ Noto'g'ri holat.")
+        return
+    
+    data = await state.get_data()
+    employee_id = data.get('editing_employee_id')
+    
+    with get_db_session() as db:
+        employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+        if employee:
+            employee.status = new_status
+            db.commit()
+            
+            crud.create_system_log(
+                db,
+                user_id=callback_query.from_user.id,
+                user_name=callback_query.from_user.full_name,
+                action=f"Xodim holati o'zgartirildi: {employee.full_name} -> {new_status.value}",
+                module="employees"
+            )
+            
+            await callback_query.message.answer(
+                f"✅ **{employee.full_name}** holati yangilandi: {new_status.value}",
+                reply_markup=get_employee_management_menu(),
+                parse_mode="Markdown"
+            )
+    
+    await state.finish()
+
+
+# =============== EMPLOYEE STATISTICS DETAILS ===============
+async def employee_statistics_details(callback_query: types.CallbackQuery, employee_id: int):
+    """Xodimning batafsil statistikasi"""
+    await callback_query.answer()
+    
+    with get_db_session() as db:
+        employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+        
+        if not employee:
+            await callback_query.message.answer("❌ Xodim topilmadi.")
+            return
+        
+        # Oxirgi 30 kundagi ish vaqtlari
+        month_ago = datetime.utcnow() - timedelta(days=30)
+        work_hours = db.query(models.WorkHours).filter(
+            models.WorkHours.employee_id == employee_id,
+            models.WorkHours.date >= month_ago
+        ).all()
+        
+        total_hours = sum([wh.hours_worked for wh in work_hours])
+        overtime_hours = sum([wh.overtime_hours for wh in work_hours])
+        
+        # Maosh to'lovlari
+        salary_payments = crud.get_employee_salary_payments(db, employee_id)
+        total_salary_paid = sum([sp.total_amount for sp in salary_payments])
+        
+        stats_text = (
+            f"📊 **{employee.full_name} - STATISTIKA**\n\n"
+            f"⏱️ **Ish vaqti (oxirgi 30 kun):**\n"
+            f"• Jami ish soati: {total_hours:.1f} soat\n"
+            f"• Qo'shimcha ish: {overtime_hours:.1f} soat\n"
+            f"• Ish kunlari: {len(work_hours)} kun\n\n"
+            f"💰 **Maosh:**\n"
+            f"• Asosiy maosh: {employee.salary:,.0f} so'm\n"
+            f"• Jami to'langan: {total_salary_paid:,.0f} so'm\n"
+            f"• To'lovlar soni: {len(salary_payments)} ta"
+        )
+        
+        await callback_query.message.answer(stats_text, parse_mode="Markdown")
+
 
 # =============== REGISTER HANDLERS ===============
 def register_handlers_employees(dp: Dispatcher):

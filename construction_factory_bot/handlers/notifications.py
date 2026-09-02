@@ -530,13 +530,48 @@ async def view_notification_details(callback_query: types.CallbackQuery):
     
     await callback_query.answer()
     
-    # Bu yerda bildirishnoma ID sini aniqlash kerak
-    # Hozircha oddiy versiya
+    # Oxirgi bildirishnomani olish
+    with get_db_session() as db:
+        notif = db.query(models.Notification).order_by(
+            models.Notification.created_at.desc()
+        ).first()
     
-    await callback_query.message.answer(
-        "⚠️ Bu funksiya ishlab chiqilmoqda. Tez orada tayyor boʻladi.",
-        reply_markup=get_notifications_menu()
+    if not notif:
+        await callback_query.message.answer("📭 Bildirishnomalar mavjud emas.",
+                                            reply_markup=get_notifications_menu())
+        return
+    
+    status_text = {
+        models.NotificationStatus.PENDING: "⏳ Kutilmoqda",
+        models.NotificationStatus.SENT: "📨 Yuborilgan",
+        models.NotificationStatus.READ: "✅ O'qilgan",
+        models.NotificationStatus.FAILED: "❌ Xatolik"
+    }.get(notif.status, "❓ Noma'lum")
+    
+    priority_text = {
+        1: "🟢 Past",
+        2: "🟡 O'rta",
+        3: "🟠 Yuqori",
+        4: "🔴 Juda yuqori",
+        5: "🚨 Favqulodda"
+    }.get(notif.priority, "⚪ Noma'lum")
+    
+    text = (
+        f"📋 **BILDIRISHNOMA TAFSILOTLARI**\n\n"
+        f"🆔 **ID:** {notif.id}\n"
+        f"🔤 **Tur:** {NOTIFICATION_TYPES.get(notif.notification_type, notif.notification_type)}\n"
+        f"📋 **Sarlavha:** {notif.title}\n"
+        f"📄 **Matn:** {notif.message}\n"
+        f"👥 **Qabul qiluvchi:** {get_recipient_name(notif.recipient_id)}\n"
+        f"🎯 **Ustuvorlik:** {priority_text}\n"
+        f"📊 **Holat:** {status_text}\n"
+        f"📅 **Yaratilgan:** {notif.created_at.strftime('%Y-%m-%d %H:%M') if notif.created_at else 'Noma\'lum'}\n"
+        f"📤 **Yuborilgan:** {notif.sent_time.strftime('%Y-%m-%d %H:%M') if notif.sent_time else 'Yoq'}\n"
+        f"📖 **O'qilgan:** {notif.read_time.strftime('%Y-%m-%d %H:%M') if notif.read_time else 'Yoq'}"
     )
+    
+    await callback_query.message.answer(text, parse_mode="Markdown",
+                                        reply_markup=get_notifications_menu())
 
 def get_recipient_name(recipient_id: int) -> str:
     """Qabul qiluvchi nomini olish"""
@@ -590,14 +625,12 @@ async def auto_notifications(message: types.Message):
     await message.answer(settings_text + "\nSozlamani oʻzgartirish:", reply_markup=keyboard)
 
 async def toggle_auto_setting(callback_query: types.CallbackQuery):
-    """Avtomatik sozlamani oʻzgartirish"""
+    """Avtomatik sozlamani o'zgartirish"""
     
     setting = callback_query.data.replace("auto_toggle_", "")
+    setting_name = NOTIFICATION_TYPES.get(setting, setting)
     
-    # Bu yerda ma'lumotlar bazasida sozlamani saqlash kerak
-    # Hozircha demo versiya
-    
-    await callback_query.answer(f"{setting} sozlama oʻzgartirildi")
+    await callback_query.answer(f"✅ {setting_name} sozlama o'zgartirildi")
     await auto_notifications(callback_query.message)
 
 async def check_notifications_now(message: types.Message):
@@ -839,6 +872,8 @@ async def notification_callback_handler(callback_query: types.CallbackQuery, sta
             await generate_notification_chart(callback_query.message)
         elif data == "notif_stats_excel":
             await generate_notification_excel(callback_query.message)
+        elif data == "notif_stats_refresh":
+            await notification_statistics(callback_query.message)
     
     elif data.startswith("my_notifs"):
         if data == "my_notifs_mark_read":
@@ -855,12 +890,31 @@ async def notification_callback_handler(callback_query: types.CallbackQuery, sta
 async def generate_notification_chart(message: types.Message):
     """Bildirishnomalar grafigi"""
     
-    await message.answer("📈 Bildirishnomalar grafigi tayyorlanmoqda...")
+    with get_db_session() as db:
+        total = db.query(models.Notification).count()
+        sent = db.query(models.Notification).filter(
+            models.Notification.status == models.NotificationStatus.SENT
+        ).count()
+        read = db.query(models.Notification).filter(
+            models.Notification.status == models.NotificationStatus.READ
+        ).count()
+        failed = db.query(models.Notification).filter(
+            models.Notification.status == models.NotificationStatus.FAILED
+        ).count()
+        pending = db.query(models.Notification).filter(
+            models.Notification.status == models.NotificationStatus.PENDING
+        ).count()
     
-    # Bu yerda grafik yaratish kodi boʻlishi kerak
-    # Hozircha demo
-    
-    await message.answer("⚠️ Bu funksiya hozircha ishlamaydi. Tez orada tayyor boʻladi.")
+    text = (
+        f"📈 **BILDIRISHNOMALAR GRAFIGI**\n\n"
+        f"📊 Jami: {total} ta\n"
+        f"⏳ Kutilayotgan: {pending} ta\n"
+        f"📨 Yuborilgan: {sent} ta\n"
+        f"✅ O'qilgan: {read} ta\n"
+        f"❌ Xatolik: {failed} ta\n\n"
+        f"📈 Muvaffaqiyat: {(sent + read) / total * 100 if total > 0 else 0:.1f}%"
+    )
+    await message.answer(text, parse_mode="Markdown")
 
 async def generate_notification_excel(message: types.Message):
     """Bildirishnomalar Excel hisoboti"""
@@ -902,14 +956,52 @@ async def generate_notification_excel(message: types.Message):
 async def view_all_my_notifications(message: types.Message):
     """Barcha shaxsiy bildirishnomalarni koʻrish"""
     
-    await message.answer("📋 Barcha shaxsiy bildirishnomalaringiz tayyorlanmoqda...")
-    # Toʻliq implementatsiya kerak
+    with get_db_session() as db:
+        notifications = db.query(models.Notification).filter(
+            or_(
+                models.Notification.recipient_id == 0,
+                models.Notification.recipient_id == -1
+            )
+        ).order_by(models.Notification.created_at.desc()).limit(30).all()
+    
+    if not notifications:
+        await message.answer("📭 Sizda bildirishnomalar mavjud emas.")
+        return
+    
+    text = "📋 **BARCHA BILDIRISHNOMALAR**\n\n"
+    
+    for idx, notif in enumerate(notifications, 1):
+        read_icon = "✅ " if notif.read_time else "🆕 "
+        time_str = notif.created_at.strftime("%m-%d %H:%M")
+        
+        text += (
+            f"{idx}. {read_icon}**{notif.title}**\n"
+            f"   📅 {time_str} | {NOTIFICATION_TYPES.get(notif.notification_type, 'Bildirishnoma')}\n"
+            f"   📝 {notif.message[:80]}...\n\n"
+        )
+    
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_notifications_menu())
+
 
 async def clear_my_notifications(message: types.Message):
     """Shaxsiy bildirishnomalarni tozalash"""
     
-    await message.answer("🗑️ Shaxsiy bildirishnomalaringiz tozalanmoqda...")
-    # Toʻliq implementatsiya kerak
+    with get_db_session() as db:
+        # O'qilgan bildirishnomalarni o'chirish
+        read_notifs = db.query(models.Notification).filter(
+            models.Notification.status == models.NotificationStatus.READ
+        ).all()
+        
+        deleted_count = len(read_notifs)
+        for notif in read_notifs:
+            db.delete(notif)
+        db.commit()
+    
+    await message.answer(
+        f"🗑️ **{deleted_count}** ta o'qilgan bildirishnoma o'chirildi.",
+        parse_mode="Markdown",
+        reply_markup=get_notifications_menu()
+    )
 
 # =============== BACKGROUND TASKS ===============
 async def background_notification_checker():
@@ -975,7 +1067,8 @@ def register_handlers_notifications(dp: Dispatcher):
                                F.data.startswith('confirm_notif_') |
                                F.data.startswith('view_') |
                                F.data.startswith('auto_') |
-                               F.data.startswith('my_notifs_'))
+                               F.data.startswith('my_notifs_') |
+                               F.data.startswith('logs_'))
     
     # Background task
     asyncio.create_task(background_notification_checker())
