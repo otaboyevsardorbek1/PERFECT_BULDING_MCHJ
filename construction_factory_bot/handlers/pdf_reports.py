@@ -24,6 +24,9 @@ class PDFReportStates(StatesGroup):
 
 async def pdf_reports_menu(message: types.Message):
     """PDF hisobotlar menyusi"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "reports"):
+        return
     
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
@@ -45,6 +48,9 @@ async def pdf_reports_menu(message: types.Message):
 
 async def handle_pdf_report_selection(message: types.Message, state: FSMContext):
     """PDF hisobot turini tanlash"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "reports"):
+        return
     
     report_map = {
         "📄 Ombor PDF": "warehouse",

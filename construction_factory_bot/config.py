@@ -28,7 +28,9 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # SQLite uchun (agar PostgreSQL bo'lmasa)
-SQLITE_DB_PATH = "database/construction.db"
+# SQLITE_DB_PATH muhit o'zgaruvchisi orqali ham o'rnatilishi mumkin
+# (masalan test/E2E muhitida databaseni vaqtinchalik papkaga yo'naltirish uchun)
+SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "database/construction.db")
 DB_PATH = SQLITE_DB_PATH  # db.py foydalanadi
 SQLITE_URL = f"sqlite:///{SQLITE_DB_PATH}"
 
@@ -43,7 +45,8 @@ BASE_DIR = Path(__file__).parent
 REPORTS_DIR = BASE_DIR / "reports"
 EXCEL_REPORTS_DIR = REPORTS_DIR / "excel"
 CHARTS_DIR = REPORTS_DIR / "charts"
-BACKUP_DIR = BASE_DIR / "backups"
+# BACKUP_DIR muhit o'zgaruvchisi orqali o'zgartirilishi mumkin (E2E/test uchun)
+BACKUP_DIR = Path(os.getenv("BACKUP_DIR", str(BASE_DIR / "backups")))
 LOGS_DIR = BASE_DIR / "logs"
 STATIC_DIR = BASE_DIR / "static"
 IMAGES_DIR = STATIC_DIR / "images"
@@ -102,6 +105,80 @@ EMPLOYEE_POSITIONS = {
     "assistant": "Yordamchi"
 }
 
+# =============== ROLLAR MATRITSASI (v3) ===============
+# Har bir rol: qaysi modullarni ko'ra oladi / o'zgartira oladi
+# Modul kalitlari: production, warehouse, sales, crm, supplier, stock_ops (rezerv/ko'chirish), finance, reports, employees, admin, sms, ai, delivery, cash_shift
+ROLES = {
+    "direktor": {
+        "label": "👑 Direktor",
+        "can_view": ["production", "warehouse", "sales", "crm", "supplier", "stock_ops", "finance", "reports", "employees", "admin", "sms", "ai", "delivery", "cash_shift", "fuel", "expenses", "picking", "security", "ratings"],
+        "can_edit": ["production", "warehouse", "sales", "crm", "supplier", "stock_ops", "finance", "reports", "employees", "admin", "sms", "ai", "delivery", "cash_shift", "fuel", "expenses", "picking", "security", "ratings"],
+        "see_cost": True,
+        "discount_limit": 100,
+    },
+    "sotuvchi": {
+        "label": "🛒 Sotuvchi",
+        "can_view": ["sales", "crm", "warehouse", "stock_ops", "delivery"],
+        "can_edit": ["sales", "crm", "stock_ops", "delivery"],
+        "see_cost": False,  # Tannarxni ko'ra olmaydi!
+        "discount_limit": 5,  # 5% dan ortiq chegirma bera olmaydi
+    },
+    "kassir": {
+        "label": "💵 Kassir",
+        "can_view": ["sales", "cash_shift"],
+        "can_edit": ["sales", "cash_shift"],
+        "see_cost": False,
+        "discount_limit": 0,
+    },
+    "omborchi": {
+        "label": "📦 Omborchi",
+        "can_view": ["warehouse", "supplier", "stock_ops", "picking"],
+        "can_edit": ["warehouse", "supplier", "stock_ops", "picking"],
+        "see_cost": False,  # Narxlarni ko'ra olmaydi
+        "discount_limit": 0,
+    },
+    "haydovchi": {
+        "label": "🚚 Haydovchi",
+        "can_view": ["warehouse", "stock_ops", "delivery", "fuel", "expenses", "picking"],
+        "can_edit": ["delivery", "fuel", "expenses"],
+        "see_cost": False,
+        "discount_limit": 0,
+    },
+    "buxgalter": {
+        "label": "🧮 Buxgalter",
+        "can_view": ["finance", "reports", "crm", "warehouse", "cash_shift", "fuel", "expenses"],
+        "can_edit": ["finance", "expenses"],
+        "see_cost": True,
+        "discount_limit": 0,
+    },
+    "ishchi": {
+        "label": "🔧 Ishchi",
+        "can_view": ["production", "warehouse"],
+        "can_edit": [],
+        "see_cost": False,
+        "discount_limit": 0,
+    },
+}
+
+ROLE_LABELS = {key: val["label"] for key, val in ROLES.items()}
+
+def role_can_view(role: str, module: str) -> bool:
+    """Rol modulni ko'ra oladimi"""
+    info = ROLES.get(role or "ishchi", ROLES["ishchi"])
+    return module in info["can_view"]
+
+def role_can_edit(role: str, module: str) -> bool:
+    """Rol modulda o'zgartirish qila oladimi"""
+    info = ROLES.get(role or "ishchi", ROLES["ishchi"])
+    return module in info["can_edit"]
+
+def role_see_cost(role: str) -> bool:
+    """Rol tannarxni ko'ra oladimi"""
+    return ROLES.get(role or "ishchi", ROLES["ishchi"]).get("see_cost", False)
+
+def get_role_label(role: str) -> str:
+    return ROLE_LABELS.get(role or "ishchi", role or "ishchi")
+
 EMPLOYEE_DEPARTMENTS = {
     "production": "Ishlab chiqarish",
     "warehouse": "Ombor",
@@ -124,6 +201,7 @@ NOTIFICATION_TYPES = {
     "daily_report": "Kunlik hisobot",
     "weekly_report": "Haftalik hisobot",
     "monthly_report": "Oylik hisobot",
+    "slow_stock": "Sekin sotiladigan zaxira",
     "holiday": "Bayram tabriklari",
     "birthday": "Tug'ilgan kun tabriklari",
     "emergency": "Favqulodda vaziyat"
@@ -190,16 +268,46 @@ CHART_SETTINGS = {
 }
 
 # =============== BACKUP SOZLAMALARI ===============
+# Rejali avtomatik backup (fon vazifasida kuniga bir marta; utils/backup.py)
 BACKUP_SETTINGS = {
-    "enabled": True,
-    "schedule": "daily",  # daily, weekly, monthly
-    "time": "02:00",  # Backup vaqti (24 soat formatida)
-    "keep_days": 30,  # 30 kun saqlash
-    "compression": "zip",  # zip, gzip, none
+    "enabled": os.getenv("BACKUP_ENABLED", "true").lower() == "true",
+    "schedule": os.getenv("BACKUP_SCHEDULE", "daily"),  # daily, weekly (dushanba), monthly (1-kun)
+    "time": os.getenv("BACKUP_TIME", "02:00"),  # Backup vaqti (24 soat formatida HH:MM)
+    "keep_days": int(os.getenv("BACKUP_KEEP_DAYS", "30")),  # 30 kun saqlash
+    "compression": os.getenv("BACKUP_COMPRESSION", "zip"),  # zip, gzip, none (zaxira .db sifatida saqlanadi)
     "include_logs": True,
     "include_reports": False,
-    "notify_on_backup": True
+    "notify_on_backup": os.getenv("BACKUP_NOTIFY", "true").lower() == "true"
 }
+
+# =============== BACKUPNI UZOQ JOYGA YUKLASH ===============
+# Har bir backup faylni uzoq joyda saqlash (favqulodda holatda serverda
+# muammo bo'lsa ham nusxa mavjud bo'ladi).
+# remote: "none" (o'chirilgan) | "telegram" (kanalga) | "s3" (S3-mos bulut)
+#         yoki ikkalasi: "telegram,s3" (har bir backup hammaga yuklanadi)
+BACKUP_UPLOAD_SETTINGS = {
+    "remote": os.getenv("BACKUP_UPLOAD", "none").lower(),
+    # Telegram: @kanal_nomi yoki -100... (bot kanalga admin qo'shilgan bo'lishi kerak)
+    "telegram_channel": os.getenv("BACKUP_TELEGRAM_CHANNEL_ID", ""),
+    # S3-mos xizmat (AWS S3, MinIO, Wasabi, DigitalOcean Spaces, Yandex Cloud...)
+    # Endpoint misollar: https://s3.amazonaws.com | http://localhost:9000 (MinIO)
+    "s3_endpoint": os.getenv("BACKUP_S3_ENDPOINT", ""),
+    "s3_region": os.getenv("BACKUP_S3_REGION", "us-east-1"),
+    "s3_bucket": os.getenv("BACKUP_S3_BUCKET", ""),
+    "s3_access_key": os.getenv("BACKUP_S3_ACCESS_KEY", ""),
+    "s3_secret_key": os.getenv("BACKUP_S3_SECRET_KEY", ""),
+    "s3_prefix": os.getenv("BACKUP_S3_PREFIX", "backups"),  # bucket ichidagi papka
+    # UZOQ JOYDAGI nusxalar necha kun saqlanadi (Telegram kanal / S3 bucket).
+    # 0 bo'lsa uzoq joyda tozalash o'chiriladi. Berilmasa BACKUP_KEEP_DAYS ishlatiladi.
+    "remote_keep_days": int(os.getenv("BACKUP_REMOTE_KEEP_DAYS", "") or BACKUP_SETTINGS["keep_days"]),
+}
+
+# =============== BACKUP SHIFRLASH (chiquvchi nusxalar) ===============
+# Parol qo'yilsa, SERVERDAN CHIQADIGAN har bir backup fayl shifrlanadi
+# (PBKDF2 + AES — Fernet) va shifrlangan holatda Telegram/S3 ga yuklanadi.
+# Lokal nusxa (backups/) shifrlanmaydi — parol faqat .env da saqlanadi.
+# Shifrlangan faylni ochish: utils/backup.py decrypt_backup_file()
+BACKUP_ENCRYPTION_PASSWORD = os.getenv("BACKUP_ENCRYPTION_PASSWORD", "")
 
 # =============== LIMITLAR ===============
 LIMITS = {
@@ -254,6 +362,42 @@ INTEGRATION_SETTINGS = {
     "api_secret_key": os.getenv("API_SECRET_KEY", "")
 }
 
+# =============== WEB SOZLAMALARI (Node.js frontend) ===============
+WEB_SETTINGS = {
+    "port": int(os.getenv("WEB_PORT", "3000")),
+    "python_api_url": os.getenv("PYTHON_API_URL", "http://127.0.0.1:8000"),
+    "cors_origins": os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","),
+}
+
+# =============== ONLAYN TO'LOVLAR (Click / Payme) ===============
+# Click: https://my.click.uz kabineti -> Service ID va Secret key (SHOP API ulangan bo'lishi kerak)
+CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "")
+CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "")
+CLICK_SECRET_KEY = os.getenv("CLICK_SECRET_KEY", "")
+# Payme: Payme Business kabineti -> Merchant (cashbox) ID va kalit (parol)
+PAYME_MERCHANT_ID = os.getenv("PAYME_MERCHANT_ID", "")
+PAYME_KEY = os.getenv("PAYME_KEY", "")
+# Mijoz to'lovdan keyin qaytadigan sahifa (ixtiyoriy, masalan web dashboard)
+PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", "")
+
+# =============== QAYTARISH AKTI (RETURN) ===============
+# Mijoz tovarni necha kun ichida qaytarishi mumkin (TZ: 7 kun)
+RETURN_PERIOD_DAYS = int(os.getenv("RETURN_PERIOD_DAYS", "7"))
+
+# =============== NASIYA QARZ ESLATMALARI (SMS) ===============
+# Muddati o'tgan qarz uchun SMS eslatma yuboriladigan kunlar (muddati o'tgandan keyin).
+# Har bir chegara har bir sotuv uchun bir marta yuboriladi (sale_id + day_bucket unikal).
+DEBT_REMINDER_DAYS = sorted(
+    int(x) for x in os.getenv("DEBT_REMINDER_DAYS", "3,7,14,30").split(",")
+    if x.strip().isdigit()
+)
+
+# =============== SEKIN SOTILADIGAN ZAXIRA (SLOW-MOVING STOCK) ===============
+# Tovar/xom ashyo necha kundan beri harakatlanmasa (sotuv, ishlab chiqarish, kirim,
+# qaytarish, ko'chirish) ogohlantirish yuboriladi. Ogohlantirish tovar harakatga
+# qaytguncha bir marta yuboriladi (SlowStockAlert jadvali unikalligi).
+SLOW_STOCK_DAYS = int(os.getenv("SLOW_STOCK_DAYS", "30"))
+
 # =============== TEST SOZLAMALARI ===============
 TEST_SETTINGS = {
     "test_mode": os.getenv("TEST_MODE", "false").lower() == "true",
@@ -263,6 +407,19 @@ TEST_SETTINGS = {
     "skip_notifications": False,
     "generate_sample_data": True
 }
+
+# Nasiya to'lov usullari
+PAYMENT_METHODS = {
+    "cash": "💵 Naqd",
+    "card": "💳 Karta",
+    "payme": "📱 Payme",
+    "click": "📱 Click",
+    "transfer": "🏦 O'tkazma",
+    "credit": "📝 Nasiya",
+}
+
+# Ombor turlari (3 xil ombor)
+WAREHOUSE_TYPES = ["xomashyo", "tayyor", "brak", "asosiy"]
 
 # =============== FUNKSIYALAR ===============
 def get_database_url():

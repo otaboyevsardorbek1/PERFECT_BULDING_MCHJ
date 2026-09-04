@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏗️ Qurilish Korxonasi — Boshqaruv Paneli v3</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">🏗️</div>
+        <div>
+          <div class="brand-title">Qurilish Korxonasi</div>
+          <div class="brand-sub">Boshqaruv v3</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-page="overview">📊 Umumiy</button>
+        <button class="nav-item" data-page="warehouse">📦 Ombor</button>
+        <button class="nav-item" data-page="products">🏭 Mahsulotlar</button>
+        <button class="nav-item" data-page="customers">👥 Mijozlar (CRM)</button>
+        <button class="nav-item" data-page="suppliers">🚚 Yetkazib beruvchilar</button>
+        <button class="nav-item" data-page="receipts">📦 Qabul aktlari</button>
+        <button class="nav-item" data-page="reservations">🔒 Rezervatsiya</button>
+        <button class="nav-item" data-page="transfers">🔄 Ko'chirish</button>
+        <button class="nav-item" data-page="inventory">📋 Inventarizatsiya</button>
+        <button class="nav-item" data-page="finance">💰 Moliya</button>
+        <button class="nav-item" data-page="roles">🔐 Rollar</button>
+        <button class="nav-item" data-page="backup">💾 Backup</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="nav-item" id="btn-new-customer">➕ Yangi mijoz</button>
+        <button class="nav-item" id="btn-new-supplier">➕ Yangi yetkazib beruvchi</button>
+        <a class="nav-item" href="/shop.html" target="_blank" rel="noopener" style="text-decoration:none;display:block">🛒 Ochiq do'kon</a>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <header class="topbar">
+        <h1 id="page-title">📊 Umumiy ko'rsatkichlar</h1>
+        <div class="topbar-right">
+          <span id="api-status" class="pill pill-unknown">API tekshirilmoqda…</span>
+          <span id="user-chip" class="pill pill-user hidden"></span>
+          <button id="btn-refresh" class="btn btn-primary">🔄 Yangilash</button>
+          <button id="btn-logout" class="btn btn-outline hidden">🚪 Chiqish</button>
+        </div>
+      </header>
+
+      <div id="content" class="content">
+        <div class="loading">Yuklanmoqda…</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- LOGIN -->
+  <div id="login-view" class="login-view hidden">
+    <form class="login-box" id="login-form" autocomplete="on">
+      <div class="brand" style="justify-content:center; margin-bottom:8px">
+        <div class="brand-logo">🏗️</div>
+        <div>
+          <div class="brand-title">Qurilish Korxonasi</div>
+          <div class="brand-sub">Boshqaruv v3 — kirish</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>📞 Telefon</label>
+        <input id="login-phone" class="form-control" placeholder="+998901234567" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>🔑 Parol</label>
+        <input id="login-password" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="form-error hidden"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="login-submit">🔐 Kirish</button>
+      <p style="margin-top:10px; text-align:center">
+        <button type="button" class="btn btn-link btn-sm" id="btn-show-reset" style="text-decoration:underline">🔑 Parolni unutdingizmi?</button>
+      </p>
+      <p class="muted" style="margin-top:6px; text-align:center">
+        Dashboardga bot ro'yxatidagi xodimlar kiradi.<br>Parol direktor tomonidan o'rnatiladi
+        (<code>python -m dashboard.auth set-password</code>).
+      </p>
+    </form>
+
+    <div class="login-box hidden" id="reset-view">
+      <div class="brand" style="justify-content:center; margin-bottom:8px">
+        <div class="brand-logo">🔑</div>
+        <div>
+          <div class="brand-title">Qurilish Korxonasi</div>
+          <div class="brand-sub">Parolni tiklash</div>
+        </div>
+      </div>
+      <!-- Qadam 1: so'rov berish -->
+      <div id="reset-step-request">
+        <div class="form-group">
+          <label>📞 Telefon</label>
+          <input id="reset-phone" class="form-control" placeholder="+998901234567">
+        </div>
+        <div class="form-group">
+          <label>📝 Sabab (ixtiyoriy)</label>
+          <input id="reset-reason" class="form-control" placeholder="Masalan: parolni unutdim">
+        </div>
+        <div id="reset-request-note" class="muted" style="margin-bottom:10px; font-size:0.9em"></div>
+        <button type="button" class="btn btn-primary btn-block" id="reset-request-btn">📨 So'rov yuborish</button>
+      </div>
+      <!-- Qadam 2: kod bilan parol o'rnatish -->
+      <div id="reset-step-code" class="hidden">
+        <div class="form-group">
+          <label>🔢 Direktor bergan kod</label>
+          <input id="reset-code" class="form-control" placeholder="ABC234XYZ9">
+        </div>
+        <div class="form-group">
+          <label>🔑 Yangi parol (kamida 8 belgi)</label>
+          <input id="reset-new-password" type="password" class="form-control" placeholder="••••••••">
+        </div>
+        <div id="reset-error" class="form-error hidden"></div>
+        <button type="button" class="btn btn-success btn-block" id="reset-complete-btn">✅ Parolni yangilash</button>
+      </div>
+      <p style="margin-top:12px; text-align:center">
+        <button type="button" class="btn btn-link btn-sm" id="btn-reset-to-login" style="text-decoration:underline">← Kirishga qaytish</button>
+      </p>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-title">Yangi</h3>
+        <button class="modal-close" id="modal-close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

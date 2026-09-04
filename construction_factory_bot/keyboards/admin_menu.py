@@ -14,9 +14,10 @@ from aiogram.types import (
 def get_admin_menu():
     """Admin paneli menyusi (reply keyboard)"""
     buttons = [
-        [KeyboardButton(text="👥 Xodimlar boshqaruvi"), KeyboardButton(text="⚙️ Tizim sozlamalari")],
-        [KeyboardButton(text="📊 Tizim statistika"), KeyboardButton(text="📝 Audit loglari")],
-        [KeyboardButton(text="💾 Backup olish"), KeyboardButton(text="⬅️ Orqaga")],
+        [KeyboardButton(text="👥 Xodimlar boshqaruvi"), KeyboardButton(text="🔐 Rollar boshqaruvi")],
+        [KeyboardButton(text="⚙️ Tizim sozlamalari"), KeyboardButton(text="📝 Audit loglari")],
+        [KeyboardButton(text="📊 Tizim statistika"), KeyboardButton(text="💾 Backup va tiklash")],
+        [KeyboardButton(text="⬅️ Orqaga")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 

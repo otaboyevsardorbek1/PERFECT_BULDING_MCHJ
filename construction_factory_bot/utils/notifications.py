@@ -8,11 +8,13 @@ import asyncio
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.session import get_db_session
 from database import crud, models
 from config import ADMIN_IDS, NOTIFICATION_TYPES
+from utils.backup import run_scheduled_backup_if_due
 
 logger = logging.getLogger(__name__)
 
@@ -595,13 +597,23 @@ async def check_delivery_notifications() -> int:
 # =============== SCHEDULED NOTIFICATIONS ===============
 async def send_daily_report() -> bool:
     """
-    Kundalik hisobotni push bildirishnoma sifatida yuborish
-    
+    Kundalik hisobotni push bildirishnoma sifatida yuborish (direktor digesti).
+
+    TZ: "Har kuni ertalab soat 8:00 da direktorning Telegram/Email ga Kunlik digest
+    — kechagi savdo, ombor holati, kechiktirilgan buyurtmalar haqida qisqa xulosa."
+    Quyidagilarni o'z ichiga oladi:
+      - Kechagi sotuvlar (soni, daromadi, nasiya qismi)
+      - Ishlab chiqarish va ombor harakati
+      - Kechiktirilgan nasiya qarzlari (mijozlar + summa)
+      - Past zaxira (xom ashyo va tayyor mahsulot)
+      - Bugun tugashi kerak bo'lgan ishlab chiqarish buyurtmalari
+
     Returns:
         bool: Muvaffaqiyatli yuborilgan bo'lsa True
     """
     
     yesterday = datetime.utcnow().date() - timedelta(days=1)
+    today = datetime.utcnow().date()
     
     with get_db_session() as db:
         # Kunlik statistikani hisoblash
@@ -618,37 +630,91 @@ async def send_daily_report() -> bool:
         ).all()
         
         # Hisobot tayyorlash
-        title = f"📊 Kundalik hisobot: {yesterday.strftime('%Y-%m-%d')}"
+        title = f"📊 Kundalik digest: {yesterday.strftime('%Y-%m-%d')}"
+        
+        sales_total = sum([s.total_amount for s in daily_sales])
+        credit_total = sum([(s.total_amount or 0) - (s.paid_amount or 0) for s in daily_sales if s.is_credit])
         
         message = (
             f"📅 *Sana:* {yesterday.strftime('%Y-%m-%d')}\n\n"
             
             f"💰 *Sotuvlar:*\n"
             f"• Jami sotuvlar: {len(daily_sales)} ta\n"
-            f"• Daromad: {sum([s.total_amount for s in daily_sales]):,.0f} so'm\n\n"
-            
-            f"🏭 *Ishlab chiqarish:*\n"
+            f"• Daromad: {sales_total:,.0f} so'm\n"
+        )
+        if credit_total > 0:
+            message += f"• 📝 Nasiyaga sotilgan: {credit_total:,.0f} so'm\n"
+        message += "\n"
+        
+        # Eng ko'p sotilgan mahsulot (kecha)
+        if daily_sales:
+            from collections import Counter
+            prod_counts = Counter(s.product_id for s in daily_sales)
+            top_pid, top_cnt = prod_counts.most_common(1)[0]
+            top_product = db.query(models.Product).filter(models.Product.id == top_pid).first()
+            if top_product:
+                message += f"🏆 *Eng ko'p sotilgan:* {top_product.name} ({top_cnt} ta)\n"
+        
+        message += (
+            f"\n🏭 *Ishlab chiqarish:*\n"
             f"• Yangi buyurtmalar: {len(daily_orders)} ta\n"
             f"• Jami miqdor: {sum([o.quantity for o in daily_orders])} birlik\n\n"
             
             f"📦 *Ombor harakatlari:*\n"
             f"• Jami harakatlar: {len(daily_transactions)} ta\n"
             f"• Kirimlar: {len([t for t in daily_transactions if t.transaction_type.value == 'kirim'])} ta\n"
-            f"• Chiqimlar: {len([t for t in daily_transactions if t.transaction_type.value == 'chiqim'])} ta\n\n"
+            f"• Chiqimlar: {len([t for t in daily_transactions if t.transaction_type.value == 'chiqim'])} ta\n"
         )
         
-        # Xom ashyo holati
-        low_stock_count = db.query(models.RawMaterial).filter(
+        # Kechiktirilgan nasiya qarzlari
+        overdue_sales = db.query(models.Sale).filter(
+            models.Sale.is_credit == True,
+            models.Sale.credit_status == "muddati_otgan",
+            models.Sale.due_date < today,
+        ).all()
+        if overdue_sales:
+            overdue_sum = sum((s.total_amount or 0) - (s.paid_amount or 0) for s in overdue_sales)
+            names = list({s.customer_name for s in overdue_sales if s.customer_name})[:3]
+            message += (
+                f"\n🚨 *Kechiktirilgan qarzlar:* {len(overdue_sales)} ta sotuv, "
+                f"jami {overdue_sum:,.0f} so'm\n"
+                f"• Mijozlar: {', '.join(names) if names else '-'}\n"
+            )
+        
+        # Past zaxira (xom ashyo + tayyor mahsulot)
+        low_raw = db.query(models.RawMaterial).filter(
             models.RawMaterial.current_stock <= models.RawMaterial.min_stock
         ).count()
+        low_products = db.query(models.Product).filter(
+            models.Product.is_active == True,
+        ).all()
+        low_prod_count = 0
+        for p in low_products:
+            try:
+                avail = crud.get_available_product_qty(db, p.id) or 0
+                if avail <= 0:
+                    low_prod_count += 1
+            except Exception:
+                pass
+        if low_raw > 0 or low_prod_count > 0:
+            message += (
+                f"\n⚠️ *Past zaxira:* {low_raw} ta xom ashyo, "
+                f"{low_prod_count} ta mahsulot tugagan\n"
+            )
         
-        if low_stock_count > 0:
-            message += f"⚠️ *Ogohlantirish:* {low_stock_count} ta xom ashyo tugab qolmoqda!\n\n"
+        # Bugun tugashi kerak bo'lgan ishlab chiqarish buyurtmalari
+        due_today = db.query(models.ProductionOrder).filter(
+            models.ProductionOrder.status == models.OrderStatus.IN_PROGRESS,
+            models.ProductionOrder.planned_end >= today,
+            models.ProductionOrder.planned_end < today + timedelta(days=1),
+        ).count()
+        if due_today > 0:
+            message += f"\n⏰ *Bugun tugashi kerak:* {due_today} ta ishlab chiqarish buyurtmasi\n"
         
-        message += "📈 Batafsil hisobotlar uchun botdan foydalaning."
+        message += "\n📈 Batafsil hisobotlar uchun botdan foydalaning."
     
     # Adminlarga yuborish
-    return await send_notification_to_admins(title, message, "system_alert")
+    return await send_notification_to_admins(title, message, "daily_report")
 
 async def send_weekly_report() -> bool:
     """
@@ -693,8 +759,6 @@ async def send_weekly_report() -> bool:
         )
         
         # Eng ko'p sotilgan mahsulotlar
-        from sqlalchemy import func
-        
         top_products = db.query(
             models.Product.name,
             func.sum(models.Sale.quantity).label('total_sold')
@@ -1020,7 +1084,9 @@ class NotificationManager:
             'production': 0,
             'system': 0,
             'salary': 0,
-            'delivery': 0
+            'delivery': 0,
+            'debt_reminder': 0,
+            'slow_stock': 0
         }
         
         try:
@@ -1029,6 +1095,8 @@ class NotificationManager:
             results['system'] = await check_system_notifications()
             results['salary'] = await check_salary_notifications()
             results['delivery'] = await check_delivery_notifications()
+            results['debt_reminder'] = await check_debt_reminders()
+            results['slow_stock'] = await check_slow_stock_notifications()
             
             logger.info(f"Notification check completed: {results}")
             
@@ -1050,7 +1118,8 @@ class NotificationManager:
             'weekly': False,
             'monthly': False,
             'holiday': False,
-            'birthday': False
+            'birthday': False,
+            'backup': False
         }
         
         try:
@@ -1074,12 +1143,197 @@ class NotificationManager:
             birthday_count = await send_birthday_greetings()
             results['birthday'] = birthday_count > 0
             
+            # Avtomatik database backup (BACKUP_TIME da, kuniga bir marta)
+            backup_result = await run_scheduled_backup_if_due(now=now)
+            results['backup'] = bool(backup_result.get('due') and backup_result.get('created'))
+            
             logger.info(f"Scheduled reports sent: {results}")
             
         except Exception as e:
             logger.error(f"Error sending scheduled reports: {e}")
         
         return results
+
+# =============== NASIYA QARZ SMS ESLATMALARI ===============
+def _debt_reminder_text(customer_name: str, lines: List[str], overdue_days: int,
+                        total_debt: float) -> str:
+    """Qarz eslatmasi SMS matnini tuzish"""
+    body = "\n".join(lines)
+    return (
+        f"Assalomu alaykum, {customer_name}!\n"
+        f"Qarzingiz muddati o'tganiga {overdue_days} kun bo'ldi:\n"
+        f"{body}\n"
+        f"Jami qarz: {total_debt:,.0f} so'm.\n"
+        "Iltimos, to'lovni amalga oshiring. Rahmat!"
+    )
+
+
+async def check_debt_reminders(db: Optional[Session] = None) -> int:
+    """
+    Muddati o'tgan nasiya qarzlari uchun SMS eslatma (3/7/14/30 kun sxemasi).
+
+    - Har bir (sotuv, kun-chegara) uchun eslatma BIR MARTA yuboriladi
+      (DebtReminder jadvalidagi unikal satr buni kafolatlaydi).
+    - Bitta mijozning bir nechta sotuvi bitta SMS'da jamlanadi.
+    - SMS xizmati o'chirilgan bo'lsa hech narsa yuborilmaydi.
+
+    Args:
+        db: Ixtiyoriy session (testlar uchun); berilmasa asosiy DB ochiladi.
+
+    Returns:
+        int: Yuborilgan SMS soni
+    """
+    from config import INTEGRATION_SETTINGS, DEBT_REMINDER_DAYS
+    if not INTEGRATION_SETTINGS.get('sms_enabled', False):
+        return 0
+
+    from utils.sms_service import sms_service
+
+    close_session = db is None
+    if close_session:
+        db = get_db_session()
+
+    sent_total = 0
+    try:
+        for days in DEBT_REMINDER_DAYS:
+            try:
+                candidates = crud.get_debt_reminder_candidates(db, days)
+                if not candidates:
+                    continue
+
+                # Telefon raqam bo'yicha jamlash: bitta mijozga bitta SMS
+                groups: Dict[str, list] = {}
+                for s in candidates:
+                    phone = (s.customer_phone or "").strip()
+                    if not phone:
+                        continue
+                    groups.setdefault(phone, []).append(s)
+
+                for phone, sales in groups.items():
+                    name = sales[0].customer_name or "hurmatli mijoz"
+                    lines = []
+                    for s in sales[:4]:
+                        lines.append(f"• {s.invoice_number}: {crud.sale_outstanding_amount(s):,.0f} so'm")
+                    if len(sales) > 4:
+                        lines.append(f"• ... yana {len(sales) - 4} ta")
+                    total_debt = sum(crud.sale_outstanding_amount(s) for s in sales)
+                    text = _debt_reminder_text(name, lines, days, total_debt)
+
+                    error = None
+                    try:
+                        result = await sms_service.send_sms(phone, text)
+                        ok = bool(result and result.get('success'))
+                        if not ok and isinstance(result, dict):
+                            error = str(result.get('error', 'Noma\'lum xatolik'))
+                    except Exception as e:
+                        ok = False
+                        error = str(e)[:250]
+
+                    for s in sales:
+                        crud.mark_debt_reminder_sent(
+                            db, s.id, days,
+                            status="sent" if ok else "failed",
+                            error=error,
+                        )
+                    if ok:
+                        sent_total += len(sales)
+                    else:
+                        logger.warning(f"Qarz SMS yuborilmadi ({days} kun): {phone} — {error}")
+            except Exception as e:
+                logger.error(f"Qarz eslatmalarini tekshirishda xatolik ({days} kun): {e}")
+    finally:
+        if close_session:
+            db.close()
+
+    if sent_total:
+        logger.info(f"Nasiya qarz SMS eslatmalari yuborildi: {sent_total}")
+    return sent_total
+
+
+# =============== SEKIN SOTILADIGAN ZAXIRA OGOHLANTIRISHLARI ===============
+async def check_slow_stock_notifications(db: Optional[Session] = None) -> int:
+    """
+    SLOW_STOCK_DAYS (standart 30) kundan beri harakatlanmagan zaxirani aniqlab,
+    rahbariyat va Ombor bo'limiga push bildirishnoma yuboradi.
+
+    - Har bir tovar/xom ashyo uchun ogohlantirish BIR MARTA yuboriladi
+      (SlowStockAlert jadvalidagi (item_type, item_id) unikalligi).
+    - Tovar harakatga qaytsa (sotuv/kirim/ishlab chiqarish/ko'chirish) qayd
+      o'chiriladi va yana N kun jim tursa qayta ogohlantiriladi.
+    - Yuborilmagan (failed) qaydlar keyingi tekshiruvda qayta uriniladi.
+
+    Args:
+        db: Ixtiyoriy session (testlar uchun); berilmasa asosiy DB ochiladi.
+
+    Returns:
+        int: Ogohlantirilgan tovarlar soni
+    """
+    from config import SLOW_STOCK_DAYS
+
+    close_session = db is None
+    if close_session:
+        db = get_db_session()
+
+    try:
+        # 1) Harakatga qaytgan tovarlarning eski qaydini tozalash
+        crud.clear_moved_slow_stock_alerts(db, SLOW_STOCK_DAYS)
+
+        # 2) Nomzodlarni topish (tayyor mahsulotlar + xom ashyolar)
+        items = crud.get_slow_moving_products(db, SLOW_STOCK_DAYS) + \
+            crud.get_slow_moving_raw_materials(db, SLOW_STOCK_DAYS)
+        if not items:
+            return 0
+
+        # 3) Xabar matnini tuzish
+        lines = []
+        for it in items:
+            icon = "📦" if it["item_type"] == "product" else "🧱"
+            lines.append(
+                f"{icon} *{it['name']}* — {it['quantity']:,.0f} {it['unit']} "
+                f"({it['days_unmoved']} kun harakatlanmagan)"
+            )
+        body = "\n".join(lines[:12])
+        if len(lines) > 12:
+            body += f"\n... va yana {len(lines) - 12} ta"
+
+        total_value = sum(it.get("value", 0) or 0 for it in items)
+        title = f"🕰️ {len(items)} ta zaxira {SLOW_STOCK_DAYS}+ kun harakatlanmagan"
+        message = (
+            f"Diqqat! Quyidagi tovarlar omborda {SLOW_STOCK_DAYS}+ kundan beri "
+            f"harakatlanmagan:\n\n{body}\n\n"
+            f"💰 *Jami qiymat:* {total_value:,.0f} so'm\n\n"
+            f"💡 Aksiya / chegirma yoki qayta joylashtirishni rejalashtiring."
+        )
+
+        # 4) Rahbariyat + Ombor bo'limiga yuborish
+        ok = False
+        error = None
+        try:
+            admin_ok = await send_notification_to_admins(title, message, "slow_stock")
+            dept_result = await send_notification_to_department("Ombor", title, message, "slow_stock")
+            ok = bool(admin_ok) or bool((dept_result or {}).get("success", 0) > 0)
+            if not ok:
+                error = "Yuborilmadi (qabul qiluvchi topilmadi)"
+        except Exception as e:
+            error = str(e)[:250]
+            logger.error(f"Sekin zaxira ogohlantirishini yuborishda xatolik: {e}")
+
+        status = "sent" if ok else "failed"
+        for it in items:
+            crud.mark_slow_stock_alerted(
+                db, it["item_type"], it["item_id"],
+                days_unmoved=it["days_unmoved"],
+                last_moved_at=it["last_moved_at"],
+                status=status, error=error,
+            )
+
+        if ok:
+            logger.info(f"Sekin sotiladigan zaxira ogohlantirildi: {len(items)} ta")
+        return len(items) if ok else 0
+    finally:
+        if close_session:
+            db.close()
+
 
 # =============== BACKGROUND TASK ===============
 async def notification_background_task():

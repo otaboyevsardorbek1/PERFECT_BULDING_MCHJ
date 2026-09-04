@@ -690,6 +690,30 @@ class HelperUtils:
         return ''.join(password_chars)
 
 
+def parse_float_input(text: Any) -> Optional[float]:
+    """
+    Foydalanuvchi kiritgan raqamni floatga aylantirish.
+    Probel/bo'sh joylarni (minglik ajratgich) olib tashlaydi, noto'g'ri kirishda None qaytaradi.
+    Misol: "5 000 000" -> 5000000.0, "12,5" -> 12.5
+    """
+    if text is None:
+        return None
+    cleaned = str(text).strip().replace(" ", "").replace("\u00a0", "").replace("\t", "")
+    if not cleaned:
+        return None
+    # Vergul kasr ajratgich sifatida ishlatilganda (12,5 -> 12.5),
+    # aks holda minglik ajratgich sifatida olib tashlanadi (1,000 -> 1000)
+    decimal = re.fullmatch(r"(-?\d+),(\d{1,2})", cleaned)
+    if decimal:
+        cleaned = f"{decimal.group(1)}.{decimal.group(2)}"
+    else:
+        cleaned = cleaned.replace(",", "")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 # Funksiyalar uchun qisqa nomlar
 validate_phone = HelperUtils.validate_phone_number
 normalize_phone = HelperUtils.normalize_phone_number
@@ -705,6 +729,7 @@ __all__ = [
     'HelperUtils',
     'validate_phone',
     'normalize_phone',
+    'parse_float_input',
     'format_currency',
     'format_percent',
     'format_date',

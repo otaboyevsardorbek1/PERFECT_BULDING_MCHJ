@@ -1,0 +1,21 @@
+{
+  "name": "construction-factory-web",
+  "version": "3.0.0",
+  "description": "🏗️ Qurilish Korxonasi — Node.js web frontend (FastAPI backend bilan ishlaydi)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "qurilish",
+    "dashboard",
+    "construction",
+    "warehouse",
+    "crm"
+  ],
+  "license": "MIT"
+}

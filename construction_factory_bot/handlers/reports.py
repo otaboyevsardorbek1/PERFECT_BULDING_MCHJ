@@ -30,6 +30,9 @@ class ReportStates(StatesGroup):
 
 async def reports_menu(message: types.Message):
     """Hisobotlar menyusi"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "reports"):
+        return
     
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
@@ -46,6 +49,9 @@ async def reports_menu(message: types.Message):
 
 async def handle_report_selection(message: types.Message, state: FSMContext):
     """Hisobot turini tanlash"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "reports"):
+        return
     
     report_map = {
         "📦 Ombor hisoboti": "warehouse",

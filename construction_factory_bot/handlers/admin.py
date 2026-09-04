@@ -263,71 +263,364 @@ async def system_settings(message: types.Message):
                         reply_markup=keyboard, parse_mode="Markdown")
 
 async def backup_database(message: types.Message):
-    """Database backup olish"""
+    """Backup boshqaruvi paneli (olish / tarix / tiklash)"""
     
     if message.from_user.id not in ADMIN_IDS:
         return
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Ha, backup olish", callback_data="backup_confirm"),
-         InlineKeyboardButton(text="❌ Bekor qilish", callback_data="backup_cancel")],
+        [InlineKeyboardButton(text="💾 Backup olish", callback_data="backup_do")],
+        [InlineKeyboardButton(text="📋 Backup tarixi", callback_data="backup_history"),
+         InlineKeyboardButton(text="♻️ Backupdan tiklash", callback_data="restore_menu")],
+        [InlineKeyboardButton(text="☁️ Bulutdan tiklash (S3)", callback_data="s3restore_menu")],
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")],
     ])
     
     await message.answer(
-        "⚠️ **DATABASE BACKUP**\n\n"
-        "Database backup jarayoni tizim ishlashiga ta'sir ko'rsatishi mumkin.\n"
-        "Backup olishni tasdiqlaysizmi?",
+        "💾 **BACKUP BOSHQARUVI**\n\n"
+        "• 💾 Backup olish — hozir zaxira nusxa olish\n"
+        "• 📋 Backup tarixi — saqlangan nusxalar (hajmi bilan)\n"
+        "• ♻️ Backupdan tiklash — lokal nusxadan databaseni qaytarish (⚠️ ehtiyot bo'ling!)\n"
+        "• ☁️ Bulutdan tiklash — S3 bucket'dagi nusxani yuklab olib tiklash\n\n"
+        "Amalni tanlang:",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
 
 async def perform_backup(callback_query: types.CallbackQuery):
-    """Backup ni amalga oshirish"""
+    """Database backup olish (konsistent nusxa + eskilarni tozalash)"""
     
-    await callback_query.answer()
+    await callback_query.answer("Backup olinmoqda...")
     
     try:
-        import shutil
-        import os
-        from datetime import datetime
+        from utils.backup import run_database_backup
+        result = await run_database_backup(notify=True)
         
-        # Backup papkasini yaratish
-        backup_dir = "backups"
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        # Backup fayl nomi
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = f"{backup_dir}/backup_{timestamp}.db"
-        
-        # SQLite database ni nusxalash (PostgreSQL uchun alohida)
-        if os.path.exists("construction.db"):
-            shutil.copy2("construction.db", backup_file)
-            backup_size = os.path.getsize(backup_file) / 1024 / 1024  # MB da
-            
+        created = result.get("created")
+        if created:
+            fname = created.split("/")[-1].split("\\")[-1]
             await callback_query.message.answer(
                 f"✅ **BACKUP MUVAFFAQIYATLI BAJARILDI!**\n\n"
-                f"📁 Fayl: `{backup_file}`\n"
-                f"📦 Hajmi: {backup_size:.2f} MB\n"
+                f"📁 Fayl: `{fname}`\n"
+                f"📦 Hajmi: {backup_size_mb(created):.2f} MB\n"
+                f"🧹 Eski nusxalar: {result.get('pruned', 0)} ta o'chirildi\n"
                 f"📅 Sana: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                 f"💾 Backup faylini xavfsiz joyda saqlang.",
                 parse_mode="Markdown"
             )
-            
-            # Tizim logiga yozish
-            with get_db_session() as db:
-                crud.create_system_log(
-                    db,
-                    user_id=callback_query.from_user.id,
-                    user_name=callback_query.from_user.full_name,
-                    action=f"Database backup olindi: {backup_file}",
-                    module="admin"
-                )
         else:
-            await callback_query.message.answer("❌ Database fayli topilmadi!")
+            await callback_query.message.answer(
+                f"❌ **BACKUP OLINMADI!**\n\n{result.get('error') or 'Noma\'lum xatolik'}",
+                parse_mode="Markdown"
+            )
+        
+        # Tizim logiga yozish
+        with get_db_session() as db:
+            crud.create_system_log(
+                db,
+                user_id=callback_query.from_user.id,
+                user_name=callback_query.from_user.full_name,
+                action=f"Database backup: {created or 'olinmadi'}",
+                module="backup"
+            )
     
     except Exception as e:
         logger.error(f"Backup error: {e}")
         await callback_query.message.answer(f"❌ Backup jarayonida xatolik: {str(e)}")
+
+
+def backup_size_mb(path: str) -> float:
+    """Fayl hajmini MB da qaytarish"""
+    try:
+        import os
+        return os.path.getsize(path) / (1024 * 1024)
+    except OSError:
+        return 0.0
+
+
+async def show_backup_history(callback_query: types.CallbackQuery):
+    """Saqlangan backup nusxalar tarixini ko'rsatish (hajmi bilan)"""
+    
+    await callback_query.answer()
+    
+    try:
+        from utils.backup import list_backup_files
+        files = list_backup_files(limit=15)
+    except Exception as e:
+        files = []
+        logger.error(f"Backup tarixini olishda xatolik: {e}")
+    
+    if not files:
+        await callback_query.message.answer(
+            "📭 **BACKUP TARIXI**\n\nHozircha backup nusxalar mavjud emas.\n"
+            "«💾 Backup olish» tugmasi orqali birinchi nusxani oling.",
+            parse_mode="Markdown"
+        )
+        return
+    
+    total_mb = sum(f["size_mb"] for f in files)
+    text = f"📋 **BACKUP TARIXI** — {len(files)} ta nusxa\n\n"
+    for i, f in enumerate(files, 1):
+        text += (
+            f"{i}. 📁 `{f['filename']}`\n"
+            f"   📦 {f['size_mb']:.2f} MB | 🕐 {f['created_at'][:16].replace('T', ' ')}"
+        )
+        text += "\n\n"
+    text += f"💰 Jami: {total_mb:.2f} MB\n\n"
+    text += "♻️ Tiklash uchun «Backupdan tiklash» bo'limidan foydalaning."
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="♻️ Backupdan tiklash", callback_data="restore_menu")],
+        [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")],
+    ])
+    await callback_query.message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+async def show_restore_menu(callback_query: types.CallbackQuery):
+    """Qaysi backup'dan tiklashni tanlash (fayl ro'yxati)"""
+    
+    await callback_query.answer()
+    
+    try:
+        from utils.backup import list_backup_files
+        files = list_backup_files(limit=10)
+    except Exception as e:
+        files = []
+        logger.error(f"Backup ro'yxatini olishda xatolik: {e}")
+    
+    if not files:
+        await callback_query.message.answer(
+            "📭 **TIKLASH UCHUN BACKUP YO'Q**\n\nAvval «💾 Backup olish» tugmasi orqali nusxa oling.",
+            parse_mode="Markdown"
+        )
+        return
+    
+    rows = [
+        [InlineKeyboardButton(
+            text=f"📁 {f['filename']} ({f['size_mb']:.1f} MB)",
+            callback_data=f"restore_pick_{f['filename']}")]
+        for f in files
+    ]
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    
+    await callback_query.message.answer(
+        "⚠️ **DATABASENI TIKLASH**\n\n"
+        "Qaysi backup nusxadan tiklamoqchisiz?\n\n"
+        "❌ DIQQAT: tiklash joriy barcha ma'lumotlarni almashtiradi! "
+        "Tiklashdan oldin joriy holatning xavfsizlik nusxasi avtomatik olinadi.",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+async def confirm_restore(callback_query: types.CallbackQuery):
+    """Tanlangan backup'dan tiklashni tasdiqlash so'rash"""
+    
+    filename = callback_query.data.replace("restore_pick_", "", 1)
+    await callback_query.answer()
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Ha, tiklash", callback_data=f"restore_confirm_{filename}"),
+         InlineKeyboardButton(text="❌ Bekor qilish", callback_data="restore_cancel")],
+    ])
+    
+    await callback_query.message.answer(
+        f"⚠️ **TIKLASHNI TASDIQLASH**\n\n"
+        f"📁 Fayl: `{filename}`\n\n"
+        f"Joriy database ushbu nusxa bilan ALMASHTIRILADI. Amalni qaytarib bo'lmaydi "
+        f"(joriy holat nusxasi `backups/` papkasiga avtomatik saqlanadi).\n\n"
+        f"Tasdiqlaysizmi?",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+async def perform_restore(callback_query: types.CallbackQuery):
+    """Backup'dan databaseni tiklash"""
+    
+    filename = callback_query.data.replace("restore_confirm_", "", 1)
+    await callback_query.answer("Tiklanmoqda...")
+    
+    try:
+        from utils.backup import restore_database
+        # Sync (fayl amali) — UI bloklanmasligi uchun thread'da bajariladi
+        import asyncio
+        result = await asyncio.to_thread(restore_database, filename)
+        
+        if result.get("success"):
+            safety = result.get("safety_backup")
+            safety_name = safety.split("/")[-1].split("\\")[-1] if safety else None
+            text = (
+                f"✅ **DATABASE TIKLANDI!**\n\n"
+                f"📁 Manba: `{filename}`\n"
+                f"💾 Xavfsizlik nusxasi: `{safety_name or '-'}`\n\n"
+                f"⚠️ Eslatma: agar bot va API (uvicorn) bir vaqtda ishlayotgan "
+                f"bo'lsa, tiklangan ma'lumot to'liq ko'rinishi uchun ikkala "
+                f"jarayonni ham qayta ishga tushiring (ochiq ulanishlar eski "
+                f"ma'lumotni ko'rsatishi mumkin). Login sessiyalari ham eskirgan "
+                f"bo'lishi mumkin — qayta kirish talab qilinishi ehtimoli bor."
+            )
+            await callback_query.message.answer(text, parse_mode="Markdown")
+            
+            # Tizim logiga yozish (tiklangan DB ga — hujjatlash uchun)
+            try:
+                with get_db_session() as db:
+                    crud.create_system_log(
+                        db,
+                        user_id=callback_query.from_user.id,
+                        user_name=callback_query.from_user.full_name,
+                        action=f"Database tiklandi: {filename}",
+                        module="backup"
+                    )
+            except Exception as e:
+                logger.error(f"Tiklash logini yozishda xatolik: {e}")
+        else:
+            await callback_query.message.answer(
+                f"❌ **TIKLASH BAJARILMADI!**\n\n{result.get('error') or 'Noma\'lum xatolik'}",
+                parse_mode="Markdown"
+            )
+    
+    except Exception as e:
+        logger.error(f"Restore error: {e}")
+        await callback_query.message.answer(f"❌ Tiklash jarayonida xatolik: {str(e)}")
+
+
+async def cancel_restore(callback_query: types.CallbackQuery):
+    """Tiklashni bekor qilish"""
+    await callback_query.answer("Bekor qilindi")
+    await backup_database(callback_query.message)
+
+
+async def show_s3_restore_menu(callback_query: types.CallbackQuery):
+    """S3 bucket'dagi backup'lardan tiklash — ob'ektlarni tanlash"""
+
+    await callback_query.answer()
+
+    try:
+        from utils.backup import list_s3_remote_backups
+        objects = list_s3_remote_backups(limit=10)
+    except Exception as e:
+        objects = []
+        logger.error(f"S3 backup ro'yxatini olishda xatolik: {e}")
+
+    if not objects:
+        await callback_query.message.answer(
+            "☁️ **BULUTDAN TIKLASH (S3)**\n\n"
+            "S3 bucket'da backup topilmadi yoki S3 sozlanmagan.\n"
+            "`BACKUP_UPLOAD=s3` va `BACKUP_S3_*` sozlamalarini tekshiring.",
+            parse_mode="Markdown"
+        )
+        return
+
+    rows = []
+    for i, obj in enumerate(objects, 1):
+        name = obj.get("name", obj.get("key", "?"))
+        size_mb = obj.get("size_mb", 0)
+        enc = " 🔐" if obj.get("encrypted") else ""
+        rows.append([InlineKeyboardButton(
+            text=f"{i}. {name} ({size_mb:.1f} MB){enc}",
+            callback_data=f"s3restore_pick_{i}")])
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_back")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    await callback_query.message.answer(
+        "☁️ **BULUTDAN TIKLASH (S3)**\n\n"
+        "Qaysi bulut nusxadan tiklamoqchisiz?\n\n"
+        "⚠️ DIQQAT: tiklash joriy barcha ma'lumotlarni almashtiradi! "
+        "Xavfsizlik nusxasi avtomatik olinadi.",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+async def confirm_s3_restore(callback_query: types.CallbackQuery):
+    """Tanlangan S3 ob'ektdan tiklashni tasdiqlash"""
+
+    idx = int(callback_query.data.replace("s3restore_pick_", "", 1))
+    await callback_query.answer()
+
+    try:
+        from utils.backup import list_s3_remote_backups
+        objects = list_s3_remote_backups(limit=10)
+        obj = objects[idx - 1] if 0 < idx <= len(objects) else None
+    except Exception:
+        obj = None
+
+    if obj is None:
+        await callback_query.message.answer(
+            "❌ Tanlangan ob'ekt topilmadi. Qaytadan urinib ko'ring.")
+        return
+
+    key = obj["key"]
+    enc = " 🔐 shifrlangan" if obj.get("encrypted") else ""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="✅ Ha, tiklash", callback_data=f"s3restore_confirm_{idx}"),
+         InlineKeyboardButton(text="❌ Bekor qilish", callback_data="restore_cancel")],
+    ])
+
+    await callback_query.message.answer(
+        f"⚠️ **S3 NUSXADAN TIKLASHNI TASDIQLASH**\n\n"
+        f"☁️ Ob'ekt: `{key}`{enc}\n\n"
+        f"Bu nusxa S3'dan yuklab olinadi va joriy database ALMASHTIRILADI. "
+        f"Joriy holat nusxasi `backups/` papkasiga avtomatik saqlanadi.\n\n"
+        f"Tasdiqlaysizmi?",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+async def perform_s3_restore(callback_query: types.CallbackQuery):
+    """S3'dagi backup'dan databaseni tiklash (yuklab olib)"""
+
+    idx = int(callback_query.data.replace("s3restore_confirm_", "", 1))
+    await callback_query.answer("Yuklab olinmoqda va tiklanmoqda...")
+
+    try:
+        from utils.backup import list_s3_remote_backups, restore_database_from_s3
+        objects = list_s3_remote_backups(limit=10)
+        obj = objects[idx - 1] if 0 < idx <= len(objects) else None
+        if obj is None:
+            raise ValueError("Ob'ekt topilmadi")
+
+        import asyncio
+        result = await asyncio.to_thread(
+            restore_database_from_s3, obj["key"])
+
+        if result.get("success"):
+            safety = result.get("safety_backup")
+            safety_name = safety.split("/")[-1].split("\\")[-1] if safety else None
+            text = (
+                f"✅ **S3 NUSXADAN DATABASE TIKLANDI!**\n\n"
+                f"☁️ Manba: `{obj['key']}`\n"
+                f"💾 Xavfsizlik nusxasi: `{safety_name or '-'}`\n\n"
+                f"⚠️ Eslatma: bot va API (uvicorn) bir vaqtda ishlayotgan bo'lsa, "
+                f"tiklangan ma'lumot to'liq ko'rinishi uchun ikkala jarayonni ham "
+                f"qayta ishga tushiring."
+            )
+            await callback_query.message.answer(text, parse_mode="Markdown")
+            try:
+                with get_db_session() as db:
+                    crud.create_system_log(
+                        db,
+                        user_id=callback_query.from_user.id,
+                        user_name=callback_query.from_user.full_name,
+                        action=f"S3'dan database tiklandi: {obj['key']}",
+                        module="backup"
+                    )
+            except Exception as e:
+                logger.error(f"S3 tiklash logini yozishda xatolik: {e}")
+        else:
+            await callback_query.message.answer(
+                f"❌ **S3 NUSXADAN TIKLASH BAJARILMADI!**\n\n"
+                f"{result.get('error') or 'Noma\'lum xatolik'}",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.error(f"S3 restore error: {e}")
+        await callback_query.message.answer(f"❌ S3 tiklashda xatolik: {str(e)}")
+
 
 # =============== AUDIT LOGS ===============
 async def view_audit_logs(message: types.Message):
@@ -568,12 +861,36 @@ async def admin_callback_handler(callback_query: types.CallbackQuery, state: FSM
     elif data == "settings_backup":
         await backup_database(callback_query.message)
     
-    elif data == "backup_confirm":
+    elif data == "backup_do" or data == "backup_confirm":
         await perform_backup(callback_query)
     
     elif data == "backup_cancel":
         await callback_query.answer("Backup bekor qilindi")
-        await admin_panel(callback_query.message)
+        await backup_database(callback_query.message)
+    
+    elif data == "backup_history":
+        await show_backup_history(callback_query)
+    
+    elif data == "restore_menu":
+        await show_restore_menu(callback_query)
+    
+    elif data.startswith("restore_pick_"):
+        await confirm_restore(callback_query)
+    
+    elif data.startswith("restore_confirm_"):
+        await perform_restore(callback_query)
+    
+    elif data == "restore_cancel":
+        await cancel_restore(callback_query)
+    
+    elif data == "s3restore_menu":
+        await show_s3_restore_menu(callback_query)
+    
+    elif data.startswith("s3restore_pick_"):
+        await confirm_s3_restore(callback_query)
+    
+    elif data.startswith("s3restore_confirm_"):
+        await perform_s3_restore(callback_query)
     
     elif data == "logs_full":
         await view_full_logs(callback_query.message)
@@ -650,14 +967,16 @@ def register_handlers_admin(dp: Dispatcher):
     # System statistics
     dp.message.register(system_statistics, F.text == "📊 Tizim statistika")
     
-    # Backup database
-    dp.message.register(backup_database, F.text == "💾 Backup olish")
+    # Backup boshqaruvi (olish / tarix / tiklash)
+    dp.message.register(backup_database, F.text == "💾 Backup va tiklash")
     
     # Callback handlers
     dp.callback_query.register(admin_callback_handler, 
                                F.data.startswith('admin_') | 
                                F.data.startswith('settings_') |
                                F.data.startswith('backup_') |
+                               F.data.startswith('restore_') |
+                               F.data.startswith('s3restore_') |
                                F.data.startswith('logs_') |
                                F.data.startswith('stats_'))
     

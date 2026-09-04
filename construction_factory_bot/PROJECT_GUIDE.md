@@ -18,32 +18,37 @@
 
 ```
 construction_factory_bot/
-├── main.py                    # Asosiy fayl (entry point)
-├── config.py                  # Konfiguratsiya
+├── main.py                    # Asosiy fayl (entry point) — aiogram v3
+├── config.py                  # Konfiguratsiya (rollar matritsasi ham)
 ├── requirements.txt           # Kutubxonalar
 ├── .env.example               # Environment namunasi
 │
 ├── database/                  # Ma'lumotlar bazasi
-│   ├── models.py              # SQLAlchemy modellari
-│   ├── crud.py                # CRUD operatsiyalari
+│   ├── models.py              # SQLAlchemy modellari (+ v3 jadvallar, auto-migratsiya)
+│   ├── crud.py                # CRUD + biznes mantiq (nasiya, qabul akti, P&L...)
 │   ├── db.py                  # SQLite boshqaruvchi
 │   └── session.py             # Database sessiya
 │
-├── handlers/                  # Telegram handlerlar
-│   ├── start.py               # /start, /help
+├── handlers/                  # Telegram handlerlar (aiogram v3)
+│   ├── start.py               # /start, /help (rolga qarab menyu)
 │   ├── production.py          # Ishlab chiqarish
 │   ├── warehouse.py           # Ombor
 │   ├── reports.py             # Excel hisobotlar
 │   ├── pdf_reports.py         # PDF hisobotlar
 │   ├── admin.py               # Admin panel
 │   ├── employees.py           # Xodimlar
-│   ├── sales.py               # Sotuvlar
+│   ├── sales.py               # Sotuvlar (nasiya limiti, chegirma)
 │   ├── notifications.py       # Bildirishnomalar
 │   ├── sms.py                 # SMS xizmati
-│   └── ai_predict.py          # AI bashoratlar
+│   ├── ai_predict.py          # AI bashoratlar
+│   ├── customers.py           # v3: CRM / mijozlar
+│   ├── suppliers.py           # v3: yetkazib beruvchilar + qabul aktlari
+│   ├── stock_ops.py           # v3: rezervatsiya, ko'chirish, inventarizatsiya, konvertatsiya
+│   ├── finance.py             # v3: moliya (P&L, qarz, soliq)
+│   └── roles.py               # v3: rollar matritsasi boshqaruvi
 │
 ├── keyboards/                 # Klaviaturalar
-│   ├── main_menu.py           # Asosiy menyu
+│   ├── main_menu.py           # Asosiy menyu (rolga qarab)
 │   ├── admin_menu.py          # Admin menyu
 │   └── inline_keyboards.py    # Inline tugmalar
 │
@@ -56,17 +61,22 @@ construction_factory_bot/
 │   ├── helpers.py             # Yordamchi funksiyalar
 │   ├── formulas.py            # Mahsulot formulalari
 │   ├── sms_service.py         # SMS xizmati
-│   └── ai_prediction.py       # AI bashoratlar
+│   ├── ai_prediction.py       # AI bashoratlar
+│   └── access.py              # v3: rol tekshiruvi (rullar matritsasi)
 │
-├── dashboard/                 # Web dashboard
-│   └── app.py                 # FastAPI ilova
+├── dashboard/                 # Python REST API (FastAPI)
+│   ├── app.py                 # FastAPI ilova (CORS + legacy sahifa)
+│   ├── api_v3.py              # v3 REST endpointlari (CRM, ta'minot, moliya...)
+│   └── ...
+│
+├── web/                       # v3: NODE.JS WEB FRONTEND (zero-dependency)
+│   ├── server.js              # Node http server + /api proxy
+│   ├── package.json           # npm start
+│   └── public/                # Yangi dizayn: index.html, style.css, app.js
 │
 ├── reports/                   # Hisobotlar papkasi
-│   ├── excel/                 # Excel fayllar
-│   ├── charts/                # Grafiklar
-│   └── pdf/                   # PDF fayllar
-│
-└── logs/                      # Log fayllar
+├── logs/                      # Log fayllar
+└── tests/                     # 200+ test (CRUD, API, utils, handler)
 ```
 
 ### 1.2 Modullar orasidagi bog'lik
@@ -638,20 +648,80 @@ isort .
 
 ---
 
-## 7. 💡 Yangi g'oyalar
+## 7. 💡 v3 — Qo'shilgan yangi modullar (TZ asosida)
 
-### 7.1 Qo'shimcha funksiyalar
+### 7.0 Arxitektura yangilanishi
+
+| Qatlam | v2 (eski) | v3 (hozir) |
+|--------|-----------|------------|
+| **Bot** | aiogram v3 | aiogram v3 (bir xil) |
+| **Web/UI** | FastAPI ichidagi inline HTML | **Node.js** frontend (`web/`), FastAPI faqat REST API |
+| **REST API** | 4 ta endpoint | 30+ endpoint (`/api/*`) |
+| **Database** | SQLite | SQLite + avtomatik migratsiya (PostgreSQL'ga tayyor) |
+| **Rollar** | faqat admin | To'liq rol matritsasi |
+
+### 7.1 Ishga tushirish (v3)
+
+```bash
+# 1) Python REST API
+python -m uvicorn dashboard.app:app --port 8000
+
+# 2) Node.js web (npm install shart emas)
+cd web && PORT=3000 PY_API_URL=http://127.0.0.1:8000 node server.js
+
+# 3) Bot
+python main.py
+```
+
+### 7.2 v3 modullar ro'yxati
+
+| Funksiya | Bot | API | Node UI |
+|----------|:---:|:---:|:---:|
+| CRM / Mijozlar (nasiya limiti, FIFO qarz to'lovi, ballar) | ✅ | ✅ | ✅ |
+| Sotuv: nasiya limit tekshiruvi, oldindan to'lov, chegirma | ✅ | — | ✅ |
+| Yetkazib beruvchilar + sifat nazorati qabul aktlari | ✅ | ✅ | ✅ |
+| Qayta buyurtma tavsiyalari (min stock) | ✅ | ✅ | ✅ |
+| Rezervatsiya (2–24 soat, avto-yechish) | ✅ | ✅ | ✅ |
+| Omborlararo ko'chirish | ✅ | ✅ | ✅ |
+| Inventarizatsiya varaqalari + dalolatnoma | ✅ | ✅ | ✅ |
+| O'lchov birliklari konvertatsiyasi | ✅ | ✅ | — |
+| P&L, soliq kalkulyatori, qarz hisobotlari | ✅ | ✅ | ✅ |
+| Rollar matritsasi boshqaruvi | ✅ | ✅ | ✅ |
+
+> 💡 **Sodiqlik ballari qoidasi (v3):** ballar faqat **haqiqatda olingan pulga** beriladi — har 100 000 so'm = 1 ball.
+> Naqd/karta sotuvda to'liq summaga, nasiya sotuvida **avansga**, qarz to'langanda esa **to'langan qismga** ball yoziladi.
+> Sotuvni yozish `crud.create_sale_record()` orqali amalga oshiriladi (test: `tests/test_database/test_sales_flow.py`).
+
+### 7.3 Rol matritsasi (config.py `ROLES`)
+
+```python
+ROLES = {
+    "direktor": {..., "can_view": ["production", "warehouse", ...], "see_cost": True, "discount_limit": 100},
+    "sotuvchi": {..., "can_edit": ["sales", "crm", "stock_ops"], "see_cost": False, "discount_limit": 5},
+    "omborchi": {..., "see_cost": False},
+    "buxgalter": {..., "see_cost": True},
+}
+```
+
+### 7.4 Database avtomatik migratsiya
+
+Eski `construction.db` yangi jadvallar/ustunlar bilan avtomatik yangilanadi —
+`models.upgrade_schema()` `main.py` startup'ida va dashboard importida chaqiriladi.
+Ma'lumot o'chirilmaydi, faqat `ALTER TABLE ADD COLUMN` + yangi jadval yaratish.
+
+### 7.5 Qo'shimcha funksiyalar (kelajak)
 
 | Funksiya | Tavsif | Muddati |
 |----------|--------|---------|
-| **🌐 Web Portal** | To'liq web ilova (React/Vue) | 2-3 oy |
 | **📊 Real-time Dashboard** | WebSocket orqali yangilanish | 1-2 hafta |
 | **🤖 Chatbot 2.0** | NLP asosidagi suhbat | 1-2 oy |
 | **📱 Mobil ilova** | Flutter/React Native | 3-4 oy |
 | **🔗 API Integration** | 1C, SAP bilan bog'lash | 2-3 oy |
 | **📊 BI Tizimi** | Business Intelligence | 1-2 oy |
-| **💳 To'lov tizimi** | Click, Payme integratsiya | 2-3 hafta |
-| **📍 GPS Tracking** | Yetkazib berish kuzatish | 1-2 oy |
+| ~~💳 To'lov tizimi~~ | ✅ Click, Payme integratsiya (dashboard/payments.py) | bajarildi |
+| ~~↩️ Qaytarish akti~~ | ✅ Pul/almashtirish/bonus qaytarish (handlers/returns.py, ReturnAct) | bajarildi |
+| ~~📍 GPS Tracking~~ | ✅ Yetkazib berish + GPS kuzatuv (handlers/delivery.py, Delivery/DeliveryLocation) | bajarildi |
+| ~~🔬 Sifat nazorati (QC)~~ | ✅ Tayyor mahsulot chiqishida tekshiruv akti (database/crud.py `create_production_qc`, ProductionQC; bot `🔬 Sifat nazorati`; `POST /api/production/{id}/quality`) | bajarildi |
 
 ### 7.2 Yangi modullar
 

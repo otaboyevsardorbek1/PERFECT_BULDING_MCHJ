@@ -7,10 +7,41 @@ from utils.helpers import (
     HelperUtils,
     validate_phone,
     normalize_phone,
+    parse_float_input,
     format_currency,
     format_percent,
     format_date
 )
+
+
+class TestParseFloatInput:
+    """Bot so'rovlarida raqamli kiritishni parse qilish"""
+
+    def test_plain_number(self):
+        assert parse_float_input("5000000") == 5000000.0
+
+    def test_thousands_space_separator(self):
+        """Minglik ajratgich sifatida probel ishlatilganda"""
+        assert parse_float_input("5 000 000") == 5000000.0
+
+    def test_decimal_comma(self):
+        assert parse_float_input("12,5") == 12.5
+
+    def test_negative(self):
+        assert parse_float_input("-500") == -500.0
+
+    def test_zero(self):
+        assert parse_float_input("0") == 0.0
+
+    def test_empty_and_spaces(self):
+        assert parse_float_input("   ") is None
+        assert parse_float_input("") is None
+        assert parse_float_input(None) is None
+
+    def test_garbage(self):
+        assert parse_float_input("abc") is None
+        assert parse_float_input("5 000 so'm") is None
+        assert parse_float_input("1e3") == 1000.0
 
 
 class TestValidatePhone:

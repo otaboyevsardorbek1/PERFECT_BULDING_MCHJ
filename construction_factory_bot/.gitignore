@@ -144,3 +144,5 @@ cython_debug/
 
 
 # End of https://mrkandreev.name/snippets/gitignore-generator/#Flask,Python,aiogram
+# Web dashboard auth maxfiy kaliti
+.web_secret

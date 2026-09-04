@@ -41,10 +41,10 @@ async def on_startup(bot: Bot):
     # Bot instance ni notifications moduliga o'rnatish
     set_bot_instance(bot)
     
-    # Database jadvallarini yaratish
+    # Database jadvallarini yaratish + eski DB ni avtomatik yangilash
     try:
-        models.Base.metadata.create_all(bind=models.engine)
-        logger.info("✅ Database jadvallari yaratildi/yuklandi")
+        models.upgrade_schema()
+        logger.info("✅ Database jadvallari yaratildi/yangilandi")
     except Exception as e:
         logger.error(f"❌ Database yaratishda xatolik: {e}")
     
@@ -204,12 +204,63 @@ async def initialize_database():
                     hire_date=datetime.now(),
                     salary=0,
                     is_admin=True,
+                    role="direktor",
                     notes="Asosiy tizim administratori"
                 )
                 
                 db.add(admin)
                 db.commit()
                 logger.info("✅ Asosiy admin xodim yaratildi")
+            
+            # ---------- v3 seed: mahsulot o'lchov birliklari konvertatsiyasi ----------
+            if db.query(models.ProductUnit).count() == 0:
+                # factor = "1 birlik nechta asosiy birlikka teng"
+                # Sement uchun asosiy birlik: qop (1 qop = 50 kg)
+                unit_seed = {
+                    "Sement M500 (50kg)": [
+                        ("qop", 1.0, "qop"),       # asosiy
+                        ("kg", 0.02, "qop"),        # 1 kg = 0.02 qop
+                        ("tonna", 20.0, "qop"),     # 1 tonna = 1000 kg = 20 qop
+                        ("pallet", 40.0, "qop"),    # 1 pallet = 40 qop
+                    ],
+                }
+                seeded_units = 0
+                for pname, units in unit_seed.items():
+                    product = db.query(models.Product).filter(models.Product.name == pname).first()
+                    if not product:
+                        continue
+                    for unit, factor, base in units:
+                        db.add(models.ProductUnit(
+                            product_id=product.id, unit=unit,
+                            factor=factor, base_unit=base,
+                        ))
+                        seeded_units += 1
+                db.commit()
+                logger.info(f"✅ v3: {seeded_units} ta o'lchov birligi konvertatsiyasi yaratildi")
+            
+            # ---------- v3 seed: demo yetkazib beruvchi ----------
+            if db.query(models.Supplier).count() == 0:
+                suppliers = [
+                    models.Supplier(name="O'zbekiston Sement", phone="+998901111111",
+                                    contact_person="Aziz Karimov", address="Ohangaron",
+                                    rating=4.8),
+                    models.Supplier(name="Metall Zavodi", phone="+998902222222",
+                                    contact_person="Botir Toshmatov", address="Bekobod"),
+                ]
+                for s in suppliers:
+                    db.add(s)
+                db.commit()
+                # Xom ashyolarni yetkazib beruvchilarga bog'lash
+                sement_sup = db.query(models.Supplier).filter(models.Supplier.name == "O'zbekiston Sement").first()
+                metall_sup = db.query(models.Supplier).filter(models.Supplier.name == "Metall Zavodi").first()
+                db.query(models.RawMaterial).filter(models.RawMaterial.supplier == "O'zbekiston Sement").update(
+                    {models.RawMaterial.supplier_id: sement_sup.id}
+                )
+                db.query(models.RawMaterial).filter(models.RawMaterial.supplier == "Metall Zavodi").update(
+                    {models.RawMaterial.supplier_id: metall_sup.id}
+                )
+                db.commit()
+                logger.info("✅ v3: demo yetkazib beruvchilar yaratildi")
             
             logger.info("✅ Database boshlang'ich ma'lumotlar bilan to'ldirildi")
             
@@ -305,6 +356,16 @@ async def main():
     from handlers.pdf_reports import register_handlers_pdf
     from handlers.sms import register_handlers_sms
     from handlers.ai_predict import register_handlers_ai
+    # v3 modullar
+    from handlers.customers import register_handlers_customers
+    from handlers.suppliers import register_handlers_suppliers
+    from handlers.stock_ops import register_handlers_stock_ops
+    from handlers.finance import register_handlers_finance
+    from handlers.roles import register_handlers_roles
+    from handlers.returns import register_handlers_returns
+    from handlers.delivery import register_handlers_delivery
+    from handlers.cash_shift import register_handlers_cash_shift
+    from handlers.operations import register_handlers_operations
     
     register_handlers_start(dp)
     register_handlers_warehouse(dp)
@@ -317,6 +378,16 @@ async def main():
     register_handlers_pdf(dp)
     register_handlers_sms(dp)
     register_handlers_ai(dp)
+    # v3 modullar
+    register_handlers_customers(dp)
+    register_handlers_suppliers(dp)
+    register_handlers_stock_ops(dp)
+    register_handlers_finance(dp)
+    register_handlers_roles(dp)
+    register_handlers_returns(dp)
+    register_handlers_delivery(dp)
+    register_handlers_cash_shift(dp)
+    register_handlers_operations(dp)
     
     logger.info("✅ Barcha handlerlar ro'yxatdan o'tkazildi")
     

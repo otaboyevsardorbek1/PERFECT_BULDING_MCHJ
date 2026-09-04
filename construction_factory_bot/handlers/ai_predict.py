@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from database.session import get_db_session
-from database import models
+from database import crud, models
 from keyboards.main_menu import get_main_menu
 from utils.ai_prediction import (
     demand_predictor, price_optimizer, inventory_predictor,
@@ -25,6 +25,9 @@ class AIPredictionStates(StatesGroup):
 
 async def ai_prediction_menu(message: types.Message):
     """AI bashorat menyusi"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "ai"):
+        return
     
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
@@ -48,6 +51,9 @@ async def ai_prediction_menu(message: types.Message):
 
 async def demand_prediction_start(message: types.Message):
     """Talab bashoratini boshlash"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "ai"):
+        return
     
     with get_db_session() as db:
         products = db.query(models.Product).filter(
@@ -117,6 +123,9 @@ async def process_demand_prediction(callback_query: types.CallbackQuery, state: 
 
 async def price_optimization_start(message: types.Message):
     """Narx optimallashtirishni boshlash"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "ai"):
+        return
     
     with get_db_session() as db:
         products = db.query(models.Product).filter(
@@ -188,6 +197,9 @@ async def process_price_optimization(callback_query: types.CallbackQuery, state:
 
 async def inventory_prediction(message: types.Message):
     """Ombor bashorati"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "ai"):
+        return
     
     with get_db_session() as db:
         materials = db.query(models.RawMaterial).all()
@@ -223,6 +235,9 @@ async def inventory_prediction(message: types.Message):
 
 async def production_time_prediction(message: types.Message):
     """Ishlab chiqarish vaqtini bashorat qilish"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "ai"):
+        return
     
     with get_db_session() as db:
         products = db.query(models.Product).filter(
@@ -290,6 +305,9 @@ async def process_production_time(callback_query: types.CallbackQuery, state: FS
 
 async def overall_ai_recommendations(message: types.Message):
     """Umumiy AI tavsiyalar"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "ai"):
+        return
     
     with get_db_session() as db:
         products = db.query(models.Product).filter(
@@ -302,7 +320,7 @@ async def overall_ai_recommendations(message: types.Message):
             recs = get_ai_recommendations(
                 product_name=product.name,
                 category=product.category,
-                current_stock=1000,  # Taxminiy
+                current_stock=crud.get_available_product_qty(db, product.id),
                 production_cost=product.production_cost,
                 current_price=product.selling_price
             )

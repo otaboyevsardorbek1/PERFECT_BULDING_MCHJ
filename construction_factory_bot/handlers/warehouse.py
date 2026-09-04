@@ -21,6 +21,9 @@ class WarehouseStates(StatesGroup):
 
 async def show_warehouse_status(message: types.Message):
     """Ombordagi holatni ko'rsatish"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "warehouse"):
+        return
 
     try:
         with get_db_session() as db:
@@ -99,6 +102,9 @@ async def show_warehouse_status(message: types.Message):
 
 async def add_raw_material_start(message: types.Message):
     """Yangi xom ashyo qo'shishni boshlash"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "warehouse", edit=True):
+        return
     await message.answer("Yangi xom ashyo nomini kiriting:", reply_markup=ReplyKeyboardRemove())
     await WarehouseStates.waiting_material_name.set()
 

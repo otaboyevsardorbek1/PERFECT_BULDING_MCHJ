@@ -19,17 +19,17 @@ asyncpg==0.29.0                 # Async PostgreSQL (agar kerak bo'lsa)
 
 # Excel fayllar bilan ishlash
 openpyxl==3.1.2                 # .xlsx fayllar uchun (asosiy)
-pandas==2.1.4                   # Data analysis (agar kerak bo'lsa)
+pandas>=2.2.0                   # Data analysis - Python 3.13 bilan ishlaydi
 xlsxwriter==3.1.9               # Excel yozish uchun
 
 # ============ RASM VA VIZUALIZATSIYA ============
 
-# Rasm qayta ishlash
-Pillow==10.1.0                  # Image processing
+# Rasm qayta ishlash - YANGILANDI!
+Pillow>=12.0.0                  # Image processing (Python 3.13 uchun)
 
-# Grafiklar va diagrammalar
-matplotlib==3.8.2               # Asosiy grafiklar
-seaborn==0.13.0                 # Statistik grafiklar (agar kerak bo'lsa)
+# Grafiklar va diagrammalar - YANGILANDI!
+matplotlib>=3.9.0               # Asosiy grafiklar
+seaborn>=0.13.2                 # Statistik grafiklar
 
 # ============ SANALAR VA VAQT ============
 
@@ -41,7 +41,7 @@ pytz==2023.3
 
 # HTTP so'rovlar
 aiohttp==3.9.1                  # Aiogram talab qiladi
-requests==2.31.0                # Sync requests (agar kerak bo'lsa)
+requests==2.31.0                # Sync requests
 
 # JSON
 ujson==5.8.0                    # Tezkor JSON
@@ -58,8 +58,8 @@ tqdm==4.66.1
 qrcode==7.4.2                   # QR code generation
 pyjwt==2.8.0                    # JWT tokens
 
-# Shifrlash
-cryptography==41.0.7
+# Shifrlash - YANGILANDI!
+cryptography>=43.0.0            # Python 3.13 uchun
 
 # Parol hashlash
 bcrypt==4.1.2
@@ -68,7 +68,7 @@ passlib==1.7.4
 # ============ QO'SHIMCHA (OPTIONAL) ============
 
 # Asosiy webserver uchun
-fastapi==0.104.1                # Web API uchun (agar kerak bo'lsa)
+fastapi==0.104.1                # Web API uchun
 uvicorn[standard]==0.24.0       # ASGI server
 
 # PDF generatsiya

@@ -4,6 +4,7 @@ from aiogram.filters import CommandStart, Command
 
 from keyboards.main_menu import get_main_menu
 from config import ADMIN_IDS
+from database.session import get_db_session
 
 async def cmd_start(message: types.Message, state: FSMContext):
     """Start command handler"""
@@ -11,6 +12,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     # Foydalanuvchini ADMIN_IDS ro'yxatida tekshirish
     is_admin = message.from_user.id in ADMIN_IDS
+    
+    # Rolga qarab menyu
+    role = None
+    with get_db_session() as db:
+        from utils.access import get_user_role, role_label
+        role = get_user_role(db, message.from_user.id)
+        role_text = role_label(db, message.from_user.id)
     
     welcome_text = f"""
     👋 Assalomu alaykum, {message.from_user.full_name}!
@@ -22,15 +30,18 @@ async def cmd_start(message: types.Message, state: FSMContext):
     📋 **Mening imkoniyatlarim:**
     • 🏭 Ishlab chiqarishni boshqarish
     • 📦 Ombordagi holatni kuzatish
-    • 💰 Xarajatlar hisobini yuritish
-    • 📊 Statistika va hisobotlar
-    • ➕ Xom ashyo kiritish/chiqarish
+    • 💰 Sotuvlar va mijozlar (CRM)
+    • 🚚 Yetkazib beruvchilar va ta'minot
+    • 🔒 Rezervatsiya, ko'chirish, inventarizatsiya
+    • 📊 Statistika, hisobotlar va moliya
     """
     
     if is_admin:
         welcome_text += "\n\n👑 Siz **Administrator** maqomidasiz!"
+    else:
+        welcome_text += f"\n\n🔐 Sizning rolingiz: **{role_text}**"
     
-    await message.answer(welcome_text, reply_markup=get_main_menu(), parse_mode="Markdown")
+    await message.answer(welcome_text, reply_markup=get_main_menu(role), parse_mode="Markdown")
 
 async def cmd_help(message: types.Message):
     """Help command handler"""
@@ -76,6 +87,9 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
 
 async def expense_report(message: types.Message):
     """Xarajat hisobi"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "finance"):
+        return
     from database.session import get_db_session
     from database import crud, models
     from datetime import datetime, timedelta, date
@@ -120,6 +134,9 @@ async def expense_report(message: types.Message):
 
 async def overall_statistics(message: types.Message):
     """Umumiy statistika"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "reports"):
+        return
     from database.session import get_db_session
     from database import crud, models
     from sqlalchemy import func
