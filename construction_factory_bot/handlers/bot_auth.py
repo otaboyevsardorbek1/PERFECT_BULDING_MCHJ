@@ -6,10 +6,14 @@ bilan tasdiqlanadi. Sessiya 5-30 daqiqa yashaydi va tugaganda (muddat,
 harakatsizlik) yoki logout qilinganda barcha darajalar bekor bo'ladi.
 
 Komandalar:
-  /login     — telefon raqami + parol bilan sessiya ochish
+  /login     — telefon raqami + parol bilan sessiya ochish (2FA bo'lsa kod ham)
   /logout    — sessiyani bekor qilish (darajalar darhol o'chadi)
   /sessiya   — joriy sessiya holatini ko'rish
   /parol     — o'z parolini o'zgartirish (parol bilgan kishi)
+  /2fa       — Google Authenticator (2FA) yoqish / o'chirish
+
+2FA (v4.2): "Direktor va kassir uchun Google Authenticator" — parol to'g'ri
+bo'lsa ham 6 xonali TOTP kod talab qilinadi. Kod server tomonda tekshiriladi.
 
 Parol saqlanishi: PBKDF2 (dashboard/auth.py bilan bir xil format) —
 bir parol ham web dashboard, ham bot uchun ishlaydi.
@@ -36,9 +40,12 @@ logger = logging.getLogger(__name__)
 class BotAuthStates(StatesGroup):
     waiting_phone = State()
     waiting_password = State()
+    waiting_otp = State()              # 2FA: Google Authenticator kodini kiritish (login)
     waiting_old_password = State()
     waiting_new_password = State()
     waiting_new_password_repeat = State()
+    waiting_2fa_confirm = State()      # /2fa yoqish: yangi QR kodni tasdiqlash
+    waiting_2fa_disable = State()      # /2fa o'chirish: joriy kodni kiritish
 
 
 # =============== YORDAMCHILAR ===============
@@ -215,35 +222,79 @@ async def process_login_password(message: types.Message, state: FSMContext):
                 )
             return
 
-        # Muvaffaqiyatli login
+        # Muvaffaqiyatli login (parol to'g'ri) — 2FA tekshiruvi
         bot_auth.reset_login_attempts(telegram_id)
 
-        # Telegram ID hali bog'lanmagan bo'lsa bog'laymiz (faqat ACTIV xodimlarga)
-        if employee.telegram_id != telegram_id:
-            if employee.telegram_id and employee.telegram_id != telegram_id:
-                # Bu raqam boshqa telegram hisobiga bog'langan — admin qo'shib qo'ysin
-                await message.answer(
-                    "⚠️ Bu raqam boshqa Telegram hisobiga bog'langan.\n"
-                    "Admin bilan bog'laning yoki admin panelda xodimni yangilang."
-                )
-                return
-            employee.telegram_id = telegram_id
-            db.commit()
-
-        if employee.status != models.EmployeeStatus.ACTIVE:
+        # 2FA (Google Authenticator): parol to'g'ri, endi 6 xonali kod so'raladi
+        if bot_auth.employee_2fa_enabled(employee):
+            await state.set_state(BotAuthStates.waiting_otp)
+            await state.update_data(phone=phone)
             await message.answer(
-                "❌ Hisobingiz faol emas (ishdan bo'shatilgan / ta'tilda).\n"
-                "Admin bilan bog'laning."
+                "🔐 **2FA TASDIQLASH**\n\n"
+                "Hisobingizda Google Authenticator yoqilgan.\n"
+                "Ilovadagi joriy **6 xonali kodni** kiriting:\n\n"
+                "_Kod har 30 soniyada yangilanadi. /cancel bilan bekor qilish mumkin._",
+                parse_mode="Markdown",
             )
             return
 
-        session = bot_auth.create_bot_session(db, employee, telegram_id)
-        role_label = ""
-        try:
-            from utils.access import role_label as _role_label
-            role_label = _role_label(db, telegram_id)
-        except Exception:
-            role_label = employee.role or "ishchi"
+        await _complete_bot_login(db, employee, telegram_id, message)
+
+
+async def process_login_otp(message: types.Message, state: FSMContext):
+    """Login 2FA bosqichi: Google Authenticator kodini tekshirib sessiya ochish"""
+    code = (message.text or "").strip()
+    telegram_id = message.from_user.id
+    data = await state.get_data()
+    phone = data.get("phone", "")
+    await state.clear()
+
+    with get_db_session() as db:
+        employee = _find_employee_by_phone(db, phone)
+        if employee is None:
+            await message.answer("❌ Xodim topilmadi. /login bilan qayta boshlang.")
+            return
+        if not bot_auth.employee_2fa_enabled(employee):
+            await message.answer("ℹ️ 2FA holati o'zgardi. Qayta /login bering.")
+            return
+        if not bot_auth.verify_2fa_code(employee, code):
+            await message.answer(
+                "❌ Kod noto'g'ri yoki muddati o'tgan.\n\n"
+                "Google Authenticator'dagi joriy kodni kiriting: /login",
+                parse_mode="Markdown",
+            )
+            return
+        await _complete_bot_login(db, employee, telegram_id, message)
+
+
+async def _complete_bot_login(db, employee, telegram_id: int, message: types.Message):
+    """Login'ning oxirgi bosqichi: telegram ID bog'lash, sessiya ochish, xabar"""
+    # Telegram ID hali bog'lanmagan bo'lsa bog'laymiz (faqat ACTIVE xodimlarga)
+    if employee.telegram_id != telegram_id:
+        if employee.telegram_id and employee.telegram_id != telegram_id:
+            # Bu raqam boshqa telegram hisobiga bog'langan — admin qo'shib qo'ysin
+            await message.answer(
+                "⚠️ Bu raqam boshqa Telegram hisobiga bog'langan.\n"
+                "Admin bilan bog'laning yoki admin panelda xodimni yangilang."
+            )
+            return
+        employee.telegram_id = telegram_id
+        db.commit()
+
+    if employee.status != models.EmployeeStatus.ACTIVE:
+        await message.answer(
+            "❌ Hisobingiz faol emas (ishdan bo'shatilgan / ta'tilda).\n"
+            "Admin bilan bog'laning."
+        )
+        return
+
+    session = bot_auth.create_bot_session(db, employee, telegram_id)
+    role_label = ""
+    try:
+        from utils.access import role_label as _role_label
+        role_label = _role_label(db, telegram_id)
+    except Exception:
+        role_label = employee.role or "ishchi"
 
     await message.answer(
         "✅ **MUVAFFAQIYATLI KIRILDINGIZ!**\n\n"
@@ -255,6 +306,143 @@ async def process_login_password(message: types.Message, state: FSMContext):
         "bekor bo'ladi va qayta /login kerak bo'ladi.\n\n"
         "📊 Sessiya holati: /sessiya\n"
         "🚪 Chiqish: /logout"
+    )
+
+
+# =============== /2FA (GOOGLE AUTHENTICATOR) ===============
+async def cmd_2fa(message: types.Message, state: FSMContext):
+    """2FA holatini ko'rsatadi; yoqish (QR kod) yoki o'chirish jarayonini boshlaydi.
+
+    Faqat faol sessiyasi bor xodimlarga ochiq — 2FA sozlamasi o'zi xavfsizlik
+    amali, shuning uchun oldin /login talab qilinadi.
+    """
+    telegram_id = message.from_user.id
+
+    with get_db_session() as db:
+        employee = db.query(models.Employee).filter(
+            models.Employee.telegram_id == telegram_id
+        ).first()
+        if employee is None:
+            await message.answer("👤 Siz tizimda xodim sifatida topilmadi. Avval /login qiling.")
+            return
+        session = bot_auth.get_active_bot_session(db, telegram_id)
+        if session is None:
+            await message.answer(
+                "🔒 **2FA** sozlamasi uchun faol sessiya kerak.\n\n"
+                "Avval /login buyrug'i bilan kiring."
+            )
+            return
+
+        enabled = bot_auth.employee_2fa_enabled(employee)
+        if enabled:
+            await state.set_state(BotAuthStates.waiting_2fa_disable)
+            await state.update_data(phone=employee.phone_number)
+            await message.answer(
+                "🔐 **2FA (Google Authenticator)**\n\n"
+                "✅ Sizning hisobingizda 2FA **yoqilgan**.\n\n"
+                "O'chirish uchun ilovadagi joriy **6 xonali kodni** kiriting:\n\n"
+                "_Xavfsizlik uchun kod so'raladi. /cancel bilan bekor qilish mumkin._",
+                parse_mode="Markdown",
+            )
+            return
+
+        # Yoqish: yangi secret + QR kod
+        from utils.totp import generate_secret, provisioning_uri, qr_png_bytes
+        secret = generate_secret()
+        employee.otp_secret = secret
+        employee.otp_enabled = False
+        db.commit()
+        uri = provisioning_uri(secret, employee.full_name)
+        text = (
+            "🔐 **2FA (GOOGLE AUTHENTICATOR)**\n\n"
+            "1. Telefoningizga **Google Authenticator** ilovasini o'rnating\n"
+            "2. Ilovada **+** → **QR kodni skanerlash** → quyidagi rasmni skanerlang\n"
+            "3. Paydo bo'lgan **6 xonali kodni** shu chatga yozing\n\n"
+            f"📎 Yoki ushbu kalitni qo'lda kiriting:\n`{secret}`\n\n"
+            "_Kodni tasdiqlash bilan 2FA yoqiladi. Telefon yo'qolsa admin bilan bog'laning._"
+        )
+        png = qr_png_bytes(secret, employee.full_name)
+        if png:
+            await message.answer_photo(
+                types.BufferedInputFile(png, filename="2fa_qr.png"),
+                caption=text,
+                parse_mode="Markdown",
+            )
+        else:
+            await message.answer(text + "\n\n(QR generatori o'rnatilmagan — kalit yetarli)",
+                                 parse_mode="Markdown")
+        await state.set_state(BotAuthStates.waiting_2fa_confirm)
+        await state.update_data(phone=employee.phone_number)
+
+
+async def process_2fa_confirm(message: types.Message, state: FSMContext):
+    """Yangi QR kod'dan olingan kodni tasdiqlab 2FA'ni yoqadi"""
+    code = (message.text or "").strip()
+    data = await state.get_data()
+    phone = data.get("phone", "")
+    await state.clear()
+
+    with get_db_session() as db:
+        employee = _find_employee_by_phone(db, phone)
+        if employee is None or not getattr(employee, "otp_secret", None):
+            await message.answer("❌ 2FA sozlamasi topilmadi. /2fa bilan qayta boshlang.")
+            return
+        from utils.totp import verify_totp
+        if not verify_totp(employee.otp_secret, code):
+            await message.answer(
+                "❌ Kod noto'g'ri yoki muddati o'tgan.\n\n"
+                "Google Authenticator'dagi joriy kodni kiriting yoki /2fa bilan qayta boshlang."
+            )
+            return
+        employee.otp_enabled = True
+        db.commit()
+        try:
+            from database import crud
+            crud.create_system_log(db, user_id=employee.telegram_id, user_name=employee.full_name,
+                                   action="2FA yoqildi (Google Authenticator)", module="security")
+        except Exception:
+            pass
+    await message.answer(
+        "✅ **2FA YOQILDI!**\n\n"
+        "Endi har kirishda (bot ham, web dashboard ham) parol + Google Authenticator "
+        "kodi talab qilinadi."
+    )
+
+
+async def process_2fa_disable(message: types.Message, state: FSMContext):
+    """Joriy kodni tekshirib 2FA'ni o'chiradi"""
+    code = (message.text or "").strip()
+    data = await state.get_data()
+    phone = data.get("phone", "")
+    await state.clear()
+
+    with get_db_session() as db:
+        employee = _find_employee_by_phone(db, phone)
+        if employee is None:
+            await message.answer("❌ Xodim topilmadi. /login qiling.")
+            return
+        if not bot_auth.verify_2fa_code(employee, code):
+            await message.answer(
+                "❌ Kod noto'g'ri.\n\n"
+                "Google Authenticator'dagi joriy kodni kiriting yoki /2fa bilan qayta boshlang."
+            )
+            return
+        employee.otp_secret = None
+        employee.otp_enabled = False
+        db.commit()
+        try:
+            bot_auth.revoke_all_employee_bot_sessions(db, employee.id, reason="2fa_disabled")
+        except Exception:
+            pass
+        try:
+            from database import crud
+            crud.create_system_log(db, user_id=employee.telegram_id, user_name=employee.full_name,
+                                   action="2FA o'chirildi", module="security")
+        except Exception:
+            pass
+    await message.answer(
+        "✅ **2FA O'CHIRILDI.**\n\n"
+        "Xavfsizlik uchun barcha sessiyalar bekor qilindi — qayta kirish uchun /login."
     )
 
 
@@ -448,13 +636,18 @@ def register_handlers_bot_auth(dp: Dispatcher):
     dp.message.register(cmd_session_status, Command("sessiya"))
     dp.message.register(cmd_session_status, F.text == "📊 Sessiya holati")
     dp.message.register(cmd_password, Command("parol"))
+    dp.message.register(cmd_2fa, Command("2fa"))
+    dp.message.register(cmd_2fa, F.text == "🔐 2FA (Google Authenticator)")
 
     # FSM bosqichlari
     dp.message.register(process_login_phone, BotAuthStates.waiting_phone)
     dp.message.register(process_login_password, BotAuthStates.waiting_password)
+    dp.message.register(process_login_otp, BotAuthStates.waiting_otp)
     dp.message.register(process_password_old, BotAuthStates.waiting_old_password)
     dp.message.register(process_password_new, BotAuthStates.waiting_new_password)
     dp.message.register(process_password_repeat, BotAuthStates.waiting_new_password_repeat)
+    dp.message.register(process_2fa_confirm, BotAuthStates.waiting_2fa_confirm)
+    dp.message.register(process_2fa_disable, BotAuthStates.waiting_2fa_disable)
 
     # /cancel auth FSM'ni ham tozalashi uchun (start.py'dan OLDIN ro'yxatdan o'tadi)
     dp.message.register(auth_cancel, Command("cancel"))

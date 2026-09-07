@@ -221,6 +221,30 @@ API endpointlari (`/api/fuel/*`, `/api/expenses/*`, `/api/picking/*`,
 
 ---
 
+## 🆕 v4.2 — 2FA: Google Authenticator (TZ: "Direktor va kassir uchun")
+
+Paroldan tashqari **6 xonali bir martalik kod** bilan ikki bosqichli kirish:
+
+| Qatlam | Holat | Izoh |
+| :--- | :-: | :--- |
+| Bot `/2fa` | ✅ | Yoqish: QR rasm + kalit, kod bilan tasdiqlash; o'chirish: joriy kod |
+| Bot `/login` | ✅ | 2FA yoqilgan xodim paroldan keyin kod kiritadi |
+| Web `/login` (HTML) | ✅ | Parol -> `otp_token` (5 daqiqa) -> kod |
+| API `/api/login` | ✅ | Kodsiz so'rov 428, noto'g'ri kod 401, to'g'ri kod 200 |
+| API `/api/auth/2fa/*` | ✅ | `setup` (secret+QR), `enable` (kod), `disable` (kod) |
+| Web UI (Xavfsizlik sahifasi) | ✅ | Holat + yoqish/o'chirish oynalari (QR ko'rsatiladi) |
+| `/api/me` | ✅ | `two_fa_enabled` maydoni |
+
+Texnik jihatlar:
+- TOTP **RFC 6238** — `utils/totp.py` (standart kutubxona; QR uchun `qrcode`,
+  u allaqachon requirements.txt da bor).
+- Secret `Employee.otp_secret` (base32) + `otp_enabled` ustunlarida; eski DB
+  `upgrade_schema()` orqali avtomatik yangilanadi (ma'lumot o'chirilmaydi).
+- Kod server tomonda tekshiriladi; 2FA o'chirilganda xavfsizlik uchun barcha
+  web/bot sessiyalari bekor qilinadi.
+
+---
+
 ## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
 
 ```bash

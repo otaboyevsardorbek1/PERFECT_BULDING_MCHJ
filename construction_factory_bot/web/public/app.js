@@ -119,15 +119,135 @@ const apiGet = (p) => api(p);
 const apiPost = (p, data) =>
   api(p, { method: "POST", body: JSON.stringify(data) });
 
-async function doLogin(phone, password) {
+async function doLogin(phone, password, otpCode) {
   // Login'da 401 = noto'g'ri parol, refresh qilish shart emas — to'g'ridan-to'g'ri so'raladi
-  const res = await _fetch("/login", { method: "POST", body: JSON.stringify({ phone, password }) });
+  const payload = { phone, password };
+  if (otpCode) payload.otp_code = otpCode;
+  const res = await _fetch("/login", { method: "POST", body: JSON.stringify(payload) });
   const body = await res.json().catch(() => null);
+  if (res.status === 428) {
+    // 2FA yoqilgan xodim: parol to'g'ri, endi Google Authenticator kodi kerak.
+    // OTP formani ko'rsatamiz va applyUser() chaqirilishini to'xtatamiz.
+    showOtpStep();
+    throw new Error("Google Authenticator kodi talab qilinadi");
+  }
   if (!res.ok) throw new Error((body && (body.error || body.detail)) || `HTTP ${res.status}`);
   saveTokens(body.token, body.refresh_token);
   ME = body.user;
   return ME;
 }
+
+/* ---------- 2FA (Google Authenticator) login bosqichi ---------- */
+// Login paroli to'g'ri chiqqanda, 2FA yoqilgan xodimlar uchun kod so'raladi.
+// OTP formasi index.html'dagi #otp-form; telefon+parol login formada qoladi.
+function showOtpStep() {
+  const otpCode = $("#otp-code");
+  const errEl = $("#otp-error");
+  if (otpCode) otpCode.value = "";
+  if (errEl) errEl.classList.add("hidden");
+  $("#login-form").classList.add("hidden");
+  $("#otp-form").classList.remove("hidden");
+  if (otpCode) otpCode.focus();
+}
+
+function hideOtpStep() {
+  $("#otp-form").classList.add("hidden");
+  $("#login-form").classList.remove("hidden");
+  const errEl = $("#otp-error");
+  if (errEl) errEl.classList.add("hidden");
+}
+
+/* DOM tayyor bo'lgach OTP formani ulaymiz (script body oxirida, DOM mavjud). */
+(function () {
+  const otpForm = document.getElementById("otp-form");
+  if (!otpForm) return;
+  otpForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const otpEl = document.getElementById("otp-code");
+    const errEl = document.getElementById("otp-error");
+    errEl.classList.add("hidden");
+    const code = otpEl.value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      errEl.textContent = "6 xonali raqamli kodni kiriting";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const submitBtn = document.getElementById("otp-submit");
+    submitBtn.disabled = true;
+    try {
+      const user = await doLogin(
+        document.getElementById("login-phone").value.trim(),
+        document.getElementById("login-password").value,
+        code
+      );
+      if (user && user.twoFaRequired) {
+        errEl.textContent = "Kod noto'g'ri yoki muddati o'tgan";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      hideOtpStep();
+      applyUser();
+    } catch (err) {
+      errEl.textContent = (err.message && err.message !== "401") ? err.message : "Kod noto'g'ri";
+      errEl.classList.remove("hidden");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+  const backBtn = document.getElementById("btn-otp-back");
+  if (backBtn) backBtn.addEventListener("click", hideOtpStep);
+})();
+
+/* ---------- 2FA (Google Authenticator) boshqaruv (security sahifasi) ---------- */
+function open2faSetupModal() {
+  apiPost("/auth/2fa/setup", {}).then((r) => {
+    openModal("🔢 2FA yoqish — Google Authenticator", `
+      <p>Telefoningizdagi <b>Google Authenticator</b> ilovasida <b>+</b> → <b>QR skanerlash</b>:</p>
+      ${r.qr_data_url ? `<img src="${r.qr_data_url}" style="width:190px;height:190px;display:block;margin:10px auto;border-radius:8px" alt="2FA QR">` : ""}
+      <p class="muted" style="text-align:center">Yoki kalitni qo'lda kiriting:<br><code style="word-break:break-all;user-select:all">${esc(r.secret)}</code></p>
+      <div class="form-group"><label>🔢 Ilovadagi 6 xonali kod</label>
+        <input id="2fa-code" class="form-control" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+      <div class="form-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Bekor</button>
+        <button class="btn btn-primary" onclick="window.submit2faEnable()">✅ Yoqish</button>
+      </div>`);
+  }).catch((e) => toast(e.message, "error"));
+}
+
+window.submit2faEnable = async function () {
+  const code = (document.getElementById("2fa-code").value || "").trim();
+  if (!/^\d{6}$/.test(code)) return toast("6 xonali kodni kiriting", "error");
+  try {
+    await apiPost("/auth/2fa/enable", { code });
+    if (ME) ME.two_fa_enabled = true;
+    toast("✅ 2FA yoqildi — endi har kirishda kod talab qilinadi");
+    closeModal();
+    navigate("security");
+  } catch (e) { toast(e.message, "error"); }
+};
+
+function open2faDisableModal() {
+  openModal("🔢 2FA o'chirish", `
+    <p>O'chirish uchun Google Authenticator'dagi joriy <b>6 xonali kod</b>ni kiriting:</p>
+    <div class="form-group"><label>🔢 Kod</label>
+      <input id="2fa-code" class="form-control" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Bekor</button>
+      <button class="btn btn-danger" onclick="window.submit2faDisable()">❌ O'chirish</button>
+    </div>`);
+}
+
+window.submit2faDisable = async function () {
+  const code = (document.getElementById("2fa-code").value || "").trim();
+  if (!/^\d{6}$/.test(code)) return toast("6 xonali kodni kiriting", "error");
+  try {
+    await apiPost("/auth/2fa/disable", { code });
+    if (ME) ME.two_fa_enabled = false;
+    toast("✅ 2FA o'chirildi — sessiyalar yangilandi, qayta kiring");
+    closeModal();
+    navigate("security");
+  } catch (e) { toast(e.message, "error"); }
+};
 
 async function doLogout() {
   /* Server tomonda sessiyani revoke qilamiz (access ham refresh ham o'ladi) */
@@ -807,8 +927,20 @@ async function renderSecurity() {
       <td>${canEdit && a.status !== "hal_qilingan" ? `
         <button class="btn btn-success btn-sm" data-security-done="${a.id}">✅ Hal qilindi</button>` : "-"}</td>
     </tr>`).join("") : "";
+  const twoFaEnabled = !!(ME && ME.two_fa_enabled);
+  const twoFaPanel = panel("🔢 2FA (Google Authenticator)", `
+    <div class="row">
+      <span>Holat: ${twoFaEnabled ? badge("✅ Yoqilgan", "green") : badge("O'chirilgan", "gray")}</span>
+      <span class="muted" style="font-size:0.9em">Parol bilan birga 6 xonali kod talab qilinadi — direktor va kassir uchun tavsiya etiladi.</span>
+    </div>
+    <div class="btn-row" style="margin-top:10px">
+      ${twoFaEnabled
+        ? `<button class="btn btn-outline btn-sm" data-2fa-disable="1">❌ 2FA o'chirish</button>`
+        : `<button class="btn btn-primary btn-sm" data-2fa-enable="1">🔢 2FA yoqish</button>`}
+    </div>`);
   return `
     ${cards([{ icon: "🚨", label: "Shubhali harakatlar", value: fmtNum(alerts.length) }])}
+    ${twoFaPanel}
     ${panel("🚨 Shubhali harakat detektori",
       alerts.length ? `<table><thead><tr><th>Daraja</th><th>Tur</th><th>Tavsif</th><th>Foydalanuvchi</th><th>Holat</th><th>Sana</th><th>Harakat</th></tr></thead><tbody>${rows}</tbody></table>` : empty("Shubhali harakatlar yo'q — hammasi tinch ✅"))}
   `;
@@ -874,6 +1006,12 @@ async function navigate(page) {
 function bindContentEvents() {
   document.querySelectorAll("[data-go]").forEach((b) =>
     b.addEventListener("click", () => navigate(b.dataset.go)));
+
+  // 2FA (Google Authenticator) boshqaruv
+  document.querySelectorAll("[data-2fa-enable]").forEach((b) =>
+    b.addEventListener("click", () => open2faSetupModal()));
+  document.querySelectorAll("[data-2fa-disable]").forEach((b) =>
+    b.addEventListener("click", () => open2faDisableModal()));
 
   // Qarz to'lash
   document.querySelectorAll("[data-pay-customer]").forEach((b) =>

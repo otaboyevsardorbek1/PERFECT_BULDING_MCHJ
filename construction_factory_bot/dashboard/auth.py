@@ -112,6 +112,24 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
+# =============== 2FA (Google Authenticator / TOTP) ===============
+# TZ: "Direktor va kassir uchun Google Authenticator" — parol + 6 xonali
+# bir martalik kod. Kod hamma vaqt tekshiriladi (server tomonda), frontend'da
+# yashirish emas. Employee.otp_secret / otp_enabled ustunlarida saqlanadi.
+
+def employee_2fa_enabled(employee: models.Employee) -> bool:
+    """Xodimda 2FA yoqilganmi (secret mavjud va otp_enabled=True)"""
+    return bool(getattr(employee, "otp_enabled", False) and getattr(employee, "otp_secret", None))
+
+
+def verify_2fa_code(employee: models.Employee, code: str) -> bool:
+    """Xodimning 2FA kodini tekshiradi (Google Authenticator TOTP)"""
+    if not employee_2fa_enabled(employee):
+        return False
+    from utils.totp import verify_totp
+    return verify_totp(employee.otp_secret, code)
+
+
 # =============== TOKEN (HMAC imzolangan access + revoke qilish mumkin) ===============
 def _b64e(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii")
@@ -149,6 +167,23 @@ def _issue_access_token(employee_id: int, session_id: Optional[int] = None) -> s
 def issue_token(employee_id: int) -> str:
     """Eski chaqiruvlar uchun sessiyasiz access token (backward-compat)"""
     return _issue_access_token(employee_id)
+
+
+def issue_2fa_pending_token(employee_id: int, ttl_seconds: int = 300) -> str:
+    """Web login'ning 2FA bosqichi uchun qisqa muddatli token.
+
+    Parol to'g'ri tekshirilgach beriladi; bu token faqat 5 daqiqa yashaydi va
+    faqat 2FA kodini tasdiqlash uchun ishlatiladi (sessiya ochmaydi).
+    """
+    payload: Dict[str, Any] = {
+        "uid": employee_id,
+        "purpose": "2fa_pending",
+        "exp": int(time.time()) + ttl_seconds,
+        "iat": int(time.time()),
+    }
+    body = _b64e(json.dumps(payload).encode("utf-8"))
+    sig = hmac.new(SECRET.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest()
+    return f"{body}.{_b64e(sig)}"
 
 
 def decode_token(token: str) -> Optional[Dict[str, Any]]:
@@ -376,6 +411,7 @@ def user_to_dict(employee: models.Employee) -> Dict[str, Any]:
         "role_label": get_role_label(role),
         "is_admin": bool(employee.is_admin),
         "has_password": bool(employee.password_hash),
+        "two_fa_enabled": employee_2fa_enabled(employee),
         "permissions": {
             "can_view": list(ROLES[role]["can_view"]),
             "can_edit": list(ROLES[role]["can_edit"]),

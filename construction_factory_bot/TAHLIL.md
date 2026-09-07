@@ -157,3 +157,21 @@ cd web && PORT=3000 PY_API_URL=http://127.0.0.1:8000 node server.js
 - Web: qisqa muddatli access token + refresh (sliding) + idle timeout + logout revoke
 - Operatsion modullar endi bot, API va Web dashboard'da bir xil ishlaydi
 - Docker + GitHub Actions CI loyihaga qo'shildi
+
+---
+
+## 8. 🔢 v4.2 — 2FA: Google Authenticator (TZ: "Direktor va kassir uchun")
+
+| Qadam | Holat | Qayerda |
+| :--- | :--- | :--- |
+| **TOTP yadro (RFC 6238)** | ✅ Bajarildi | `utils/totp.py` — secret, kod, tekshirish (±30s oyna), otpauth URI, QR (qrcode) |
+| **DB ustunlari** | ✅ Bajarildi | `Employee.otp_secret`/`otp_enabled` + `EXTRA_COLUMNS` migratsiyasi |
+| **Bot `/2fa`** | ✅ Bajarildi | Yoqish: QR rasm + secret, kod bilan tasdiqlash; o'chirish: joriy kod talab |
+| **Bot `/login`** | ✅ Bajarildi | 2FA yoqilgan xodim paroldan keyin `waiting_otp` bosqichida kod kiritadi |
+| **Web `/login`** | ✅ Bajarildi | Parol -> `issue_2fa_pending_token` (5 daq) -> otp formasi -> sessiya |
+| **API `/api/login`** | ✅ Bajarildi | 2FA yoqilgan bo'lsa `otp_code` talab (kodsiz 428, noto'g'ri 401) |
+| **API `/api/auth/2fa/*`** | ✅ Bajarildi | `setup` (secret+QR), `enable`, `disable` — kod bilan; `/api/me` da `two_fa_enabled` |
+| **Web UI** | ✅ Bajarildi | Login'da 2-bosqich forma; Xavfsizlik sahifasida yoqish/o'chirish (QR modal) |
+| **Testlar** | ✅ Bajarildi | `tests/test_api/test_2fa.py` — 14 test (TOTP + API + web login) |
+
+**Natija: 582 ta test o'tdi** (568 + 14 yangi).

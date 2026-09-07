@@ -62,6 +62,20 @@ def verify_password(password: str, stored: Optional[str]) -> bool:
         return False
 
 
+# =============== 2FA (Google Authenticator / TOTP) ===============
+def employee_2fa_enabled(employee) -> bool:
+    """Xodimda 2FA yoqilganmi (bot login'da ham talab qilinadi)"""
+    return bool(getattr(employee, "otp_enabled", False) and getattr(employee, "otp_secret", None))
+
+
+def verify_2fa_code(employee, code: str) -> bool:
+    """Google Authenticator kodini tekshirish"""
+    if not employee_2fa_enabled(employee):
+        return False
+    from utils.totp import verify_totp
+    return verify_totp(employee.otp_secret, code)
+
+
 # =============== BRUTEFORCE HIMOYASI ===============
 def _attempts_key(telegram_id: int) -> Dict[str, Any]:
     return _login_attempts.setdefault(

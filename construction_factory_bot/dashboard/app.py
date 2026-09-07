@@ -24,8 +24,9 @@ from database.session import get_db, get_db_session
 from database import crud, models
 from dashboard.auth import (
     AuthUser, TOKEN_TTL_SECONDS, WEB_TOKEN_COOKIE, create_web_session,
-    decode_token, find_employee_by_phone, get_web_user, require_role,
-    revoke_session, strip_cost_fields, verify_password,
+    decode_token, employee_2fa_enabled, find_employee_by_phone, get_web_user,
+    issue_2fa_pending_token, require_role, revoke_session, strip_cost_fields,
+    verify_2fa_code, verify_password,
 )
 
 # =============== TANNARX MAYDONLARINI YASHIRISH (server tomonda) ===============
@@ -178,13 +179,39 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 # =============== LEGACY HTML SAHIFA AUTH (root dashboard) ===============
-def _login_page_html(error: str = "") -> str:
-    """Login sahifasi (xodim telefoni + web parol)"""
+def _login_page_html(error: str = "", need_otp: bool = False,
+                     otp_token: str = "") -> str:
+    """Login sahifasi.
+
+    - Oddiy hol: xodim telefoni + web parol.
+    - need_otp=True: parol to'g'ri kiritilgan, endi Google Authenticator kodini
+      so'raymiz (otp_token yashirin maydonda — parol qayta so'ralmaydi).
+    """
     err_block = (
         f'<div style="background:#f8d7da;color:#721c24;padding:10px 14px;'
         f'border-radius:8px;margin-bottom:16px;font-size:0.95em;">{error}</div>'
         if error else ""
     )
+    if need_otp:
+        fields = (
+            f'<input type="hidden" name="otp_token" value="{otp_token}">'
+            f'<label for="otp_code">🔢 Google Authenticator kodi</label>'
+            f'<input type="text" id="otp_code" name="otp_code" placeholder="6 xonali kod" '
+            f'autocomplete="one-time-code" inputmode="numeric" maxlength="6" required>'
+            f'<button type="submit">Tasdiqlash</button>'
+            f'<div class="hint">Telefoningizdagi Google Authenticator ilovasidan joriy 6 xonali kodni kiriting.</div>'
+        )
+    else:
+        fields = (
+            f'<label for="phone">📱 Telefon raqami</label>'
+            f'<input type="text" id="phone" name="phone" placeholder="+998901234567" '
+            f'autocomplete="username" required>'
+            f'<label for="password">🔑 Parol</label>'
+            f'<input type="password" id="password" name="password" placeholder="Web parol" '
+            f'autocomplete="current-password" required>'
+            f'<button type="submit">Kirish</button>'
+            f'<div class="hint">Xodim telefoni va web paroli ishlatiladi.<br>Parol o\'rnatilmagan bo\'lsa, admin bilan bog\'laning.</div>'
+        )
     return f"""
     <!DOCTYPE html>
     <html lang="uz">
@@ -225,12 +252,7 @@ def _login_page_html(error: str = "") -> str:
             <h1>🏗️ Qurilish Korxonasi</h1>
             <p class="sub">Dashboard'ga kirish</p>
             {err_block}
-            <label for="phone">📱 Telefon raqami</label>
-            <input type="text" id="phone" name="phone" placeholder="+998901234567" autocomplete="username" required>
-            <label for="password">🔑 Parol</label>
-            <input type="password" id="password" name="password" placeholder="Web parol" autocomplete="current-password" required>
-            <button type="submit">Kirish</button>
-            <div class="hint">Xodim telefoni va web paroli ishlatiladi.<br>Parol o'rnatilmagan bo'lsa, admin bilan bog'laning.</div>
+            {fields}
         </form>
     </body>
     </html>
@@ -265,18 +287,63 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/login")
 async def login_submit(request: Request, db: Session = Depends(get_db)):
-    """Telefon + parolni tekshirib, web_token cookie'sini o'rnatadi"""
+    """Telefon + parolni (va 2FA bo'lsa Google Authenticator kodini) tekshirib
+    web_token cookie'sini o'rnatadi.
+
+    2FA qadam: parol to'g'ri chiqsa va xodimda 2FA yoqilgan bo'lsa, qisqa muddatli
+    otp_token beriladi va sahifada kod so'raladi. Kod tasdiqlangach sessiya ochiladi.
+    """
     try:
         form = await request.form()
         phone = str(form.get("phone", "")).strip()
         password = str(form.get("password", ""))
+        otp_token = str(form.get("otp_token", "")).strip()
+        otp_code = str(form.get("otp_code", "")).strip()
     except Exception:
         return HTMLResponse(content=_login_page_html("So'rov noto'g'ri formatda"), status_code=400)
+
+    # --- 2FA bosqichi: parol allaqachon tasdiqlangan, kodni tekshiramiz ---
+    if otp_token:
+        payload = decode_token(otp_token)
+        if not payload or payload.get("purpose") != "2fa_pending" or not payload.get("uid"):
+            return HTMLResponse(content=_login_page_html("Sessiya muddati o'tdi. Qayta kiring."), status_code=401)
+        employee = db.query(models.Employee).filter(
+            models.Employee.id == payload["uid"]
+        ).first()
+        if not employee or not employee_2fa_enabled(employee):
+            return HTMLResponse(content=_login_page_html("2FA holati o'zgardi. Qayta kiring."), status_code=401)
+        if not otp_code:
+            return HTMLResponse(
+                content=_login_page_html("Google Authenticator kodini kiriting", need_otp=True, otp_token=otp_token),
+                status_code=400,
+            )
+        if not verify_2fa_code(employee, otp_code):
+            return HTMLResponse(
+                content=_login_page_html("Google Authenticator kodi noto'g'ri", need_otp=True, otp_token=otp_token),
+                status_code=401,
+            )
+        token_data = create_web_session(
+            db, employee, user_agent=request.headers.get("user-agent", "") or ""
+        )
+        secure = request.url.scheme == "https"
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(
+            WEB_TOKEN_COOKIE, token_data["access_token"], max_age=TOKEN_TTL_SECONDS,
+            httponly=True, samesite="lax", secure=secure, path="/",
+        )
+        return response
+
+    # --- Oddiy bosqich: telefon + parol ---
     if not phone or not password:
         return HTMLResponse(content=_login_page_html("Telefon va parolni kiriting"), status_code=400)
     employee = find_employee_by_phone(db, phone)
     if not employee or not employee.password_hash or not verify_password(password, employee.password_hash):
         return HTMLResponse(content=_login_page_html("Telefon yoki parol noto'g'ri"), status_code=401)
+    # 2FA yoqilgan bo'lsa — kod so'raymiz (parolni qayta so'ramaymiz)
+    if employee_2fa_enabled(employee):
+        return HTMLResponse(
+            content=_login_page_html("", need_otp=True, otp_token=issue_2fa_pending_token(employee.id)),
+        )
     token_data = create_web_session(
         db, employee, user_agent=request.headers.get("user-agent", "") or ""
     )

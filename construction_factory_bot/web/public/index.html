@@ -90,6 +90,29 @@
       </p>
     </form>
 
+    <!-- 2FA bosqichi: parol to'g'ri, endi Google Authenticator kodi -->
+    <form class="login-box hidden" id="otp-form" autocomplete="on">
+      <div class="brand" style="justify-content:center; margin-bottom:8px">
+        <div class="brand-logo">🔢</div>
+        <div>
+          <div class="brand-title">Qurilish Korxonasi</div>
+          <div class="brand-sub">Google Authenticator tasdiqlash</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>🔢 6 xonali kod</label>
+        <input id="otp-code" class="form-control" placeholder="000000" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+      </div>
+      <div id="otp-error" class="form-error hidden"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="otp-submit">✅ Tasdiqlash</button>
+      <p style="margin-top:10px; text-align:center">
+        <button type="button" class="btn btn-link btn-sm" id="btn-otp-back" style="text-decoration:underline">⬅️ Orqaga</button>
+      </p>
+      <p class="muted" style="margin-top:6px; text-align:center">
+        Telefoningizdagi Google Authenticator ilovasidan joriy kodni kiriting.<br>Kod har 30 soniyada yangilanadi.
+      </p>
+    </form>
+
     <div class="login-box hidden" id="reset-view">
       <div class="brand" style="justify-content:center; margin-bottom:8px">
         <div class="brand-logo">🔑</div>

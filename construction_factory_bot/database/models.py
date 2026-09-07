@@ -258,6 +258,8 @@ class Employee(Base):
     is_admin = Column(Boolean, default=False)
     role = Column(String(30), default="ishchi")  # direktor, sotuvchi, kassir, omborchi, haydovchi, buxgalter, ishchi
     password_hash = Column(String(255), nullable=True)  # Web dashboard paroli (v3 auth)
+    otp_secret = Column(String(64), nullable=True)      # Google Authenticator (TOTP) secret — base32 (v4.2 2FA)
+    otp_enabled = Column(Boolean, default=False)        # 2FA yoqilganmi (v4.2)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -990,6 +992,8 @@ EXTRA_COLUMNS = {
     "employees": [
         ("role", "VARCHAR(30)"),
         ("password_hash", "VARCHAR(255)"),
+        ("otp_secret", "VARCHAR(64)"),
+        ("otp_enabled", "BOOLEAN"),
     ],
     "deliveries": [
         ("problem_reported", "VARCHAR(255)"),

@@ -18,9 +18,10 @@ from dashboard.password_reset import (
 )
 from dashboard.auth import (
     AuthUser, PASSWORD_MIN_LENGTH, create_web_session, effective_role,
-    find_employee_by_phone, get_current_user, refresh_session, require_any_edit,
-    require_role, revoke_all_employee_sessions, revoke_session, session_to_dict,
-    set_employee_password, touch_session, user_to_dict, verify_password,
+    employee_2fa_enabled, find_employee_by_phone, get_current_user, refresh_session,
+    require_any_edit, require_role, revoke_all_employee_sessions, revoke_session,
+    session_to_dict, set_employee_password, touch_session, user_to_dict,
+    verify_2fa_code, verify_password,
 )
 from config import SESSION_IDLE_MINUTES, SESSION_MINUTES, role_can_view
 
@@ -65,6 +66,13 @@ def api_login(request: Request, data: dict, db: Session = Depends(get_db)):
     employee = find_employee_by_phone(db, phone)
     if not employee or not employee.password_hash or not verify_password(password, employee.password_hash):
         raise HTTPException(401, "Telefon yoki parol noto'g'ri")
+    # 2FA (Google Authenticator): parol to'g'ri bo'lsa ham kod talab qilinadi
+    if employee_2fa_enabled(employee):
+        otp_code = str(data.get("otp_code", "")).strip()
+        if not otp_code:
+            raise HTTPException(428, "Google Authenticator kodini kiriting (otp_code)")
+        if not verify_2fa_code(employee, otp_code):
+            raise HTTPException(401, "Google Authenticator kodi noto'g'ri")
     token_data = create_web_session(
         db, employee,
         user_agent=request.headers.get("user-agent", "") or "",
@@ -116,6 +124,88 @@ def api_logout(request: Request, data: dict = None, db: Session = Depends(get_db
             revoke_session(db, session_id=payload["sid"], reason="logout")
             return {"success": True}
     raise HTTPException(401, "Token topilmadi")
+
+
+# =============== 2FA (Google Authenticator) BOSHQARISH ===============
+@router.post("/auth/2fa/setup")
+def api_2fa_setup(user: AuthUser = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """Yangi TOTP secret + QR kod yaratadi (hali yoqilmagan — faqat tayyorlanadi).
+
+    Direktor/kassir o'z hisobida 2FA'ni yoqishni boshlaganda ishlatiladi.
+    Kod verify qilinmaguncha otp_enabled=False bo'ladi.
+    """
+    from utils.totp import generate_secret, provisioning_uri, qr_data_url
+    employee = db.query(models.Employee).filter(models.Employee.id == user.id).first()
+    if employee is None:
+        raise HTTPException(404, "Xodim topilmadi")
+    secret = generate_secret()
+    employee.otp_secret = secret
+    employee.otp_enabled = False
+    db.commit()
+    return {
+        "secret": secret,
+        "provisioning_uri": provisioning_uri(secret, employee.full_name),
+        "qr_data_url": qr_data_url(secret, employee.full_name),
+        "enabled": False,
+    }
+
+
+@router.post("/auth/2fa/enable")
+def api_2fa_enable(data: dict, user: AuthUser = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Tayyorlangan secret'ni kod bilan tasdiqlab 2FA'ni yoqadi"""
+    employee = db.query(models.Employee).filter(models.Employee.id == user.id).first()
+    if employee is None:
+        raise HTTPException(404, "Xodim topilmadi")
+    if not getattr(employee, "otp_secret", None):
+        raise HTTPException(400, "Avval /auth/2fa/setup chaqiring")
+    if employee_2fa_enabled(employee):
+        return {"enabled": True, "message": "2FA allaqachon yoqilgan"}
+    code = str(data.get("code", "")).strip()
+    if not code:
+        raise HTTPException(400, "Google Authenticator kodini kiriting")
+    from utils.totp import verify_totp
+    if not verify_totp(employee.otp_secret, code):
+        raise HTTPException(400, "Kod noto'g'ri — Google Authenticator'dagi joriy 6 xonali kodni kiriting")
+    employee.otp_enabled = True
+    db.commit()
+    try:
+        crud.create_system_log(db, user_id=user.telegram_id, user_name=user.full_name,
+                               action="2FA yoqildi (Google Authenticator)", module="security")
+    except Exception:
+        pass
+    return {"enabled": True}
+
+
+@router.post("/auth/2fa/disable")
+def api_2fa_disable(data: dict, user: AuthUser = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """2FA'ni o'chirish — joriy kodni so'rab, keyin secret'ni tozalaydi"""
+    employee = db.query(models.Employee).filter(models.Employee.id == user.id).first()
+    if employee is None:
+        raise HTTPException(404, "Xodim topilmadi")
+    if not employee_2fa_enabled(employee):
+        return {"enabled": False, "message": "2FA o'chirilgan"}
+    code = str(data.get("code", "")).strip()
+    if not code:
+        raise HTTPException(400, "Google Authenticator kodini kiriting")
+    if not verify_2fa_code(employee, code):
+        raise HTTPException(400, "Kod noto'g'ri")
+    employee.otp_secret = None
+    employee.otp_enabled = False
+    # Xavfsizlik: 2FA o'chirilgach barcha sessiyalarni yangilash talab qilamiz
+    try:
+        revoke_all_employee_sessions(db, employee.id, reason="2fa_disabled")
+    except Exception:
+        db.rollback()
+    db.commit()
+    try:
+        crud.create_system_log(db, user_id=user.telegram_id, user_name=user.full_name,
+                               action="2FA o'chirildi", module="security")
+    except Exception:
+        pass
+    return {"enabled": False}
 
 
 @router.get("/me")
