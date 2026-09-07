@@ -123,10 +123,11 @@ async def process_sms_message(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
     else:
+        sms_error = result.get("error") or "Noma'lum xatolik"
         await message.answer(
             f"❌ <b>SMS YUBORISHDA XATOLIK!</b>\n\n"
             f"📞 Qabul qiluvchi: {phone}\n"
-            f"❌ Xatolik: {result.get('error', 'Noma\'lum xatolik')}",
+            f"❌ Xatolik: {sms_error}",
             reply_markup=get_main_menu(),
             parse_mode="HTML"
         )
@@ -232,12 +233,12 @@ async def sms_settings(message: types.Message):
     sms_enabled = INTEGRATION_SETTINGS.get('sms_enabled', False)
     sms_provider = INTEGRATION_SETTINGS.get('sms_provider', 'eskiz.uz')
     sms_sender = INTEGRATION_SETTINGS.get('sms_sender', 'KORXONA')
-    
+    enabled_text = "✅ Faol" if sms_enabled else "❌ O‘chirilgan"
     settings_text = (
         f"⚙️ <b>SMS SOZLAMALARI</b>\n\n"
         f"📱 Xizmat: {sms_provider}\n"
         f"📤 Yuboruvchi: {sms_sender}\n"
-        f"🔴 Holat: {'✅ Faol' if sms_enabled else '❌ O\'chirilgan'}\n\n"
+        f"🔴 Holat: {enabled_text}\n\n"
         f"📝 Sozlamalarni o'zgartirish uchun admin bilan bog'laning."
     )
     

@@ -548,6 +548,8 @@ async def view_notification_details(callback_query: types.CallbackQuery):
         5: "🚨 Favqulodda"
     }.get(notif.priority, "⚪ Noma'lum")
     
+    created_text = (notif.created_at.strftime('%Y-%m-%d %H:%M')
+                    if notif.created_at else "Noma'lum")
     text = (
         f"📋 **BILDIRISHNOMA TAFSILOTLARI**\n\n"
         f"🆔 **ID:** {notif.id}\n"
@@ -557,7 +559,7 @@ async def view_notification_details(callback_query: types.CallbackQuery):
         f"👥 **Qabul qiluvchi:** {get_recipient_name(notif.recipient_id)}\n"
         f"🎯 **Ustuvorlik:** {priority_text}\n"
         f"📊 **Holat:** {status_text}\n"
-        f"📅 **Yaratilgan:** {notif.created_at.strftime('%Y-%m-%d %H:%M') if notif.created_at else 'Noma\'lum'}\n"
+        f"📅 **Yaratilgan:** {created_text}\n"
         f"📤 **Yuborilgan:** {notif.sent_time.strftime('%Y-%m-%d %H:%M') if notif.sent_time else 'Yoq'}\n"
         f"📖 **O'qilgan:** {notif.read_time.strftime('%Y-%m-%d %H:%M') if notif.read_time else 'Yoq'}"
     )

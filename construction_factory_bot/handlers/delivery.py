@@ -96,13 +96,14 @@ def _delivery_text(d: models.Delivery) -> str:
     loc = ""
     if d.current_lat is not None and d.current_lng is not None:
         loc = f"📍 {d.current_lat:.6f}, {d.current_lng:.6f}"
+    loc_line = ("   " + loc + "\n") if loc else ""
     return (
         f"📄 <b>{d.delivery_number}</b> — {status}\n"
         f"   🏭 {html.escape(d.product_name or '')} x {_qty(d.quantity)} {d.unit or ''}\n"
         f"   👤 {html.escape(d.customer_name or '-')} | 📞 {html.escape(d.customer_phone or '-')}\n"
         f"   🏠 {html.escape(d.customer_address or '-')}\n"
         f"   🚚 Haydovchi: {html.escape(d.driver_name or '-')}\n"
-        f"{('   ' + loc + '\n') if loc else ''}"
+        f"{loc_line}"
     )
 
 

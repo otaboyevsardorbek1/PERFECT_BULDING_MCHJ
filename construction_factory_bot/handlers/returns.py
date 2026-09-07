@@ -141,11 +141,12 @@ async def return_pick_sale(callback: types.CallbackQuery, state: FSMContext):
 
         remaining = (sale.quantity or 0) - (sale.returned_qty or 0)
         unit = product.unit if product else ""
+        prod_name = html.escape(product.name) if product else "Noma'lum"
         await state.update_data(sale_id=sale_id, remaining=remaining)
         await callback.message.answer(
             "↩️ <b>Qaytarish akti</b>\n\n"
             f"🧾 Sotuv: <b>{html.escape(sale.invoice_number or '')}</b>\n"
-            f"🏭 Mahsulot: <b>{html.escape(product.name) if product else "Noma'lum"}</b>\n"
+            f"🏭 Mahsulot: <b>{prod_name}</b>\n"
             f"📦 Qoldiq: <b>{_qty_text(remaining)} {unit}</b>\n\n"
             "Qaytariladigan miqdorni kiriting:",
             reply_markup=_inline_buttons([("❌ Bekor qilish", "ret_cancel")]),
@@ -358,12 +359,14 @@ async def _show_confirm(message: types.Message, state: FSMContext):
         qty = float(data.get("quantity") or 0)
         x_value = qty * (sale.unit_price or 0) if sale else 0
         exchange_value = float(data.get("exchange_value") or 0)
+        ret_prod_name = html.escape(product.name) if product else "Noma'lum"
+        ret_unit = product.unit if product else ""
 
         text = (
             "↩️ <b>QAYTARISH AKTI — TASDIQLASH</b>\n\n"
             f"🧾 Sotuv: {html.escape(sale.invoice_number or '') if sale else '-'}\n"
-            f"🏭 Qaytariladigan: {html.escape(product.name) if product else "Noma'lum"} x "
-            f"{_qty_text(qty)} {product.unit if product else ''}\n"
+            f"🏭 Qaytariladigan: {ret_prod_name} x "
+            f"{_qty_text(qty)} {ret_unit}\n"
             f"💵 Qiymati: <b>{format_currency(x_value)} so'm</b>\n"
         )
 

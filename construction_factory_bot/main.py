@@ -19,6 +19,7 @@ from config import BOT_TOKEN, ADMIN_IDS, DB_NAME
 from database.session import get_db_session
 from database import models
 from utils.notifications import set_bot_instance, notification_background_task
+from utils import bot_auth
 
 # =============== LOGGING KONFIGURATSIYASI ===============
 logging.basicConfig(
@@ -337,6 +338,59 @@ async def main():
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     
+    # ---------- v4: GLOBAL SESSIYA MIDDLEWARE (bot login/parol xavfsizligi) ----------
+    # TZ: har bir xodim parol bilan kiradi; sessiya (5-30 daq) tugaganda yoki
+    # logout qilinganda BARCHA darajalar bekor bo'ladi. Middleware har bir
+    # xabar/callback uchun sessiyani tekshiradi — admin gate'lar ham qamrab olinadi.
+    from aiogram.fsm.context import FSMContext
+    from handlers.bot_auth import BotAuthStates
+    from utils.access import is_session_free_text
+
+    @dp.message.middleware()
+    async def bot_session_middleware(handler, event: types.Message, data):
+        if not bot_auth.is_bot_auth_enabled():
+            return await handler(event, data)
+        state: FSMContext = data.get("state")
+        current = await state.get_state() if state else None
+        # Login/parol kirish jarayonida sessiya talab qilinmaydi (aks holda FSM bloklanadi)
+        if current and str(current).startswith("BotAuthStates"):
+            return await handler(event, data)
+        text = (event.text or "").strip()
+        # Login oldi komandalar MENYU TUGMALARI ham ochiq bo'lishi shart —
+        # to'liq matn ("🔐 Kirish (login)") va /buyruq shakli ikkalasi tekshiriladi
+        if is_session_free_text(text):
+            return await handler(event, data)
+        from_user = getattr(event, "from_user", None)
+        if from_user is None or from_user.is_bot:
+            return await handler(event, data)
+        with get_db_session() as db:
+            ok = bot_auth.check_session_permission(db, from_user.id) is None
+        if not ok:
+            await event.answer(
+                "🔐 Sessiya yaroqsiz yoki muddati tugagan.\n"
+                "Davom etish uchun: /login"
+            )
+            if state:
+                await state.clear()
+            return
+        return await handler(event, data)
+
+    @dp.callback_query.middleware()
+    async def bot_session_cb_middleware(handler, callback: types.CallbackQuery, data):
+        if not bot_auth.is_bot_auth_enabled():
+            return await handler(callback, data)
+        from_user = getattr(callback, "from_user", None)
+        if from_user is None:
+            return await handler(callback, data)
+        with get_db_session() as db:
+            ok = bot_auth.check_session_permission(db, from_user.id) is None
+        if not ok:
+            await callback.answer(
+                "Sessiya tugagan. /login bilan qayta kiring", show_alert=True
+            )
+            return
+        return await handler(callback, data)
+    
     # Startup/shutdown handlerlarni ro'yxatdan o'tkazish (v3 uslubi)
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
@@ -345,6 +399,9 @@ async def main():
     logger.info("Handlerlarni ro'yxatdan o'tkazish...")
     
     # Handler importlari - har biri o'zini register qiladi
+    # v4: AUTH handlerlari BIRINCHI bo'lib ro'yxatdan o'tadi (FSM ustuvorligi:
+    # /cancel auth jarayonini ham tozalashi uchun)
+    from handlers.bot_auth import register_handlers_bot_auth
     from handlers.start import register_handlers_start
     from handlers.warehouse import register_handlers_warehouse
     from handlers.production import register_handlers_production
@@ -367,6 +424,7 @@ async def main():
     from handlers.cash_shift import register_handlers_cash_shift
     from handlers.operations import register_handlers_operations
     
+    register_handlers_bot_auth(dp)
     register_handlers_start(dp)
     register_handlers_warehouse(dp)
     register_handlers_production(dp)
@@ -394,6 +452,10 @@ async def main():
     # Komandalarni o'rnatish
     await bot.set_my_commands([
         types.BotCommand(command="start", description="Botni ishga tushirish"),
+        types.BotCommand(command="login", description="Tizimga kirish (parol bilan)"),
+        types.BotCommand(command="sessiya", description="Sessiya holati"),
+        types.BotCommand(command="logout", description="Tizimdan chiqish"),
+        types.BotCommand(command="parol", description="Parolni o'zgartirish"),
         types.BotCommand(command="help", description="Yordam olish"),
         types.BotCommand(command="admin", description="Admin paneli"),
         types.BotCommand(command="ombor", description="Ombor holati"),

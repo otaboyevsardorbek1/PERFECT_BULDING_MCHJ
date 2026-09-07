@@ -591,10 +591,11 @@ async def dashboard_home(request: Request, auth_db: Session = Depends(get_db)):
         status_class = "badge-success" if order.status == models.OrderStatus.COMPLETED else "badge-warning"
         status_text = order.status.value if order.status else "jarayonda"
         
+        product_name = product.name if product else "Noma'lum"
         html_content += f"""
                         <tr>
                             <td>{order.order_number or f'#{order.id}'}</td>
-                            <td>{product.name if product else 'Noma\'lum'}</td>
+                            <td>{product_name}</td>
                             <td>{order.quantity}</td>
                             <td><span class="badge {status_class}">{status_text}</span></td>
                             <td>{order.created_at.strftime('%d.%m.%Y %H:%M') if order.created_at else '-'}</td>

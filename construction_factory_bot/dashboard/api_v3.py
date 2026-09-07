@@ -19,9 +19,10 @@ from dashboard.password_reset import (
 from dashboard.auth import (
     AuthUser, PASSWORD_MIN_LENGTH, create_web_session, effective_role,
     find_employee_by_phone, get_current_user, refresh_session, require_any_edit,
-    require_role, revoke_session, set_employee_password, user_to_dict, verify_password,
+    require_role, revoke_all_employee_sessions, revoke_session, session_to_dict,
+    set_employee_password, touch_session, user_to_dict, verify_password,
 )
-from config import role_can_view
+from config import SESSION_IDLE_MINUTES, SESSION_MINUTES, role_can_view
 
 router = APIRouter(prefix="/api", tags=["v3"])
 
@@ -51,7 +52,12 @@ def _token_response(data: dict, user: dict) -> dict:
 
 @router.post("/login")
 def api_login(request: Request, data: dict, db: Session = Depends(get_db)):
-    """Xodim telefoni va paroli bilan kirish -> access + refresh token"""
+    """Xodim telefoni va paroli bilan kirish -> access + refresh token.
+
+    Muvaffaqiyatli kirishda foydalanuvchiga rol darajalari (ruxsatlar) beriladi.
+    Sessiya muddati: SESSION_MINUTES (5-30 daqiqa); SESSION_IDLE_MINUTES dan uzoq
+    harakatsizlik yoki logout bo'lsa barcha darajalar bekor qilinadi.
+    """
     phone = str(data.get("phone", "")).strip()
     password = str(data.get("password", ""))
     if not phone or not password:
@@ -63,6 +69,13 @@ def api_login(request: Request, data: dict, db: Session = Depends(get_db)):
         db, employee,
         user_agent=request.headers.get("user-agent", "") or "",
     )
+    try:
+        crud.create_system_log(db, user_id=employee.telegram_id,
+                               user_name=employee.full_name,
+                               action="Web dashboardga kirish (login)",
+                               module="security")
+    except Exception:
+        pass
     return _token_response(token_data, user_to_dict(employee))
 
 
@@ -83,12 +96,16 @@ def api_refresh(data: dict, db: Session = Depends(get_db)):
 
 @router.post("/logout")
 def api_logout(request: Request, data: dict = None, db: Session = Depends(get_db)):
-    """Sessiyani revoke qiladi — access ham refresh ham ishlamay qoladi"""
+    """Sessiyani revoke qiladi — o'sha sessiyaga berilgan barcha darajalar bekor bo'ladi.
+
+    Sessiya o'lganda access token ham refresh token ham ishlamay qoladi:
+    keyingi so'rov 401 qaytaradi va foydalanuvchi qayta login qiladi.
+    """
     data = data or {}
     refresh_token = str(data.get("refresh_token", ""))
     # 1) Refresh token berilgan bo'lsa shu sessiyani revoke qilamiz
     if refresh_token:
-        revoke_session(db, refresh_token=refresh_token)
+        revoke_session(db, refresh_token=refresh_token, reason="logout")
         return {"success": True}
     # 2) Bo'lmasa access token'dagi sid orqali revoke qilamiz
     auth = request.headers.get("authorization", "")
@@ -96,15 +113,33 @@ def api_logout(request: Request, data: dict = None, db: Session = Depends(get_db
         from dashboard.auth import decode_token
         payload = decode_token(auth[7:].strip())
         if payload and payload.get("sid") is not None:
-            revoke_session(db, session_id=payload["sid"])
+            revoke_session(db, session_id=payload["sid"], reason="logout")
             return {"success": True}
     raise HTTPException(401, "Token topilmadi")
 
 
 @router.get("/me")
-def api_me(user: AuthUser = Depends(get_current_user)):
-    """Joriy foydalanuvchi profili va ruxsatlari"""
-    return {"user": user.to_dict()}
+def api_me(request: Request, db: Session = Depends(get_db),
+           user: AuthUser = Depends(get_current_user)):
+    """Joriy foydalanuvchi profili, ruxsatlari (berilgan darajalar) va sessiya holati"""
+    result = {"user": user.to_dict()}
+    # Sessiya holati: muddat va harakatsizlik taymeri UI avto-logout uchun ishlatiladi
+    auth = request.headers.get("authorization", "")
+    sid = None
+    if auth.lower().startswith("bearer "):
+        from dashboard.auth import decode_token
+        payload = decode_token(auth[7:].strip())
+        if payload:
+            sid = payload.get("sid")
+    if sid is not None:
+        ws = db.query(models.WebSession).filter(models.WebSession.id == sid).first()
+        if ws is not None:
+            result["session"] = session_to_dict(ws)
+    result["session_policy"] = {
+        "access_ttl_seconds": SESSION_MINUTES * 60,
+        "idle_timeout_seconds": SESSION_IDLE_MINUTES * 60,
+    }
+    return result
 
 
 @router.post("/roles/{employee_id}/password")
@@ -128,6 +163,84 @@ def api_set_employee_password(employee_id: int, data: dict,
     except Exception:
         pass
     return {"success": True}
+
+
+# =============== BOT SESSIYALARI BOSHQARUVI (v4) ===============
+@router.get("/bot-sessions")
+def api_bot_sessions(db: Session = Depends(get_db),
+                     limit: int = Query(100, le=500),
+                     actor: AuthUser = Depends(require_role("admin", edit=False))):
+    """Xodimlarning bot sessiyalari ro'yxati (faqat admin/direktor).
+
+    TZ xavfsizlik: direktor kim qachon login qilgani, sessiya qolgan vaqti
+    va sessiya qanday tugaganini (logout/idle/expired) kuzatadi.
+    """
+    from utils.bot_auth import session_to_dict as bot_session_to_dict
+
+    sessions = db.query(models.EmployeeAuthSession).order_by(
+        models.EmployeeAuthSession.created_at.desc()
+    ).limit(limit).all()
+
+    result = []
+    for s in sessions:
+        info = bot_session_to_dict(s)
+        emp = db.query(models.Employee).filter(models.Employee.id == s.employee_id).first()
+        info["employee_name"] = emp.full_name if emp else "?"
+        result.append(info)
+    return {"sessions": result, "count": len(result)}
+
+
+@router.get("/bot-sessions/policy")
+def api_bot_sessions_policy(actor: AuthUser = Depends(require_role("admin", edit=False))):
+    """Bot sessiya siyosati (TZ: 5-30 daqiqa sessiya, idle timeout, blok qoidalari)"""
+    from config import (
+        BOT_AUTH_ENABLED, BOT_SESSION_MINUTES, BOT_SESSION_IDLE_MINUTES,
+        BOT_LOGIN_MAX_ATTEMPTS, BOT_LOGIN_LOCKOUT_MINUTES,
+    )
+    return {
+        "auth_enabled": BOT_AUTH_ENABLED,
+        "session_minutes": BOT_SESSION_MINUTES,
+        "idle_timeout_minutes": BOT_SESSION_IDLE_MINUTES,
+        "max_login_attempts": BOT_LOGIN_MAX_ATTEMPTS,
+        "lockout_minutes": BOT_LOGIN_LOCKOUT_MINUTES,
+    }
+
+
+@router.post("/bot-sessions/revoke")
+def api_revoke_bot_sessions(data: dict, db: Session = Depends(get_db),
+                            actor: AuthUser = Depends(require_role("admin", edit=True))):
+    """Xodimning barcha faol bot sessiyalarini bekor qilish (darajalarni olib tashlash).
+
+    Body: {"employee_id": 5} yoki {"telegram_id": 123456789}
+    """
+    from utils.bot_auth import (
+        revoke_all_employee_bot_sessions,
+        revoke_employee_bot_sessions_by_telegram_id,
+    )
+
+    employee_id = data.get("employee_id")
+    telegram_id = data.get("telegram_id")
+    if employee_id is None and telegram_id is None:
+        raise HTTPException(400, "employee_id yoki telegram_id kerak")
+
+    if employee_id is not None:
+        revoked = revoke_all_employee_bot_sessions(db, int(employee_id), reason="admin")
+        emp = db.query(models.Employee).filter(models.Employee.id == int(employee_id)).first()
+        name = emp.full_name if emp else str(employee_id)
+    else:
+        revoked = revoke_employee_bot_sessions_by_telegram_id(db, int(telegram_id), reason="admin")
+        emp = db.query(models.Employee).filter(
+            models.Employee.telegram_id == int(telegram_id)
+        ).first()
+        name = emp.full_name if emp else str(telegram_id)
+
+    try:
+        crud.create_system_log(db, user_id=actor.telegram_id, user_name=actor.full_name,
+                               action=f"Bot sessiyalari bekor qilindi: {name} ({revoked} ta)",
+                               module="admin")
+    except Exception:
+        pass
+    return {"success": True, "revoked": revoked, "employee": name}
 
 
 # =============== MIJOZLAR (CRM) ===============

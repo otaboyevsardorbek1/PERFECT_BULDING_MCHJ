@@ -739,11 +739,13 @@ async def process_salary_year(callback_query: types.CallbackQuery, state: FSMCon
         ).first()
         
         if existing_payment:
+            paid_date = (existing_payment.payment_date.strftime('%Y-%m-%d')
+                         if existing_payment.payment_date else "Noma'lum")
             await callback_query.message.answer(
                 f"⚠️ **Diqqat!**\n\n"
                 f"{data['month']}/{data['year']} oyi uchun maosh allaqachon to'langan:\n"
                 f"💳 Miqdor: {existing_payment.total_amount:,.0f} so'm\n"
-                f"📅 To'lov sanasi: {existing_payment.payment_date.strftime('%Y-%m-%d') if existing_payment.payment_date else 'Noma\'lum'}\n"
+                f"📅 To'lov sanasi: {paid_date}\n"
                 f"📊 Holat: {existing_payment.status}\n\n"
                 f"Yana maosh to'lamoqchimisiz?",
                 parse_mode="Markdown"

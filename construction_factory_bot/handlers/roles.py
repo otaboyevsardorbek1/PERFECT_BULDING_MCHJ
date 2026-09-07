@@ -85,6 +85,8 @@ async def role_set(callback: types.CallbackQuery, state: FSMContext):
                                user_name=callback.from_user.full_name,
                                action=f"Rol o'zgartirildi: {employee.full_name} -> {ROLES[role]['label']}",
                                module="roles")
+        cost_text = ("👁️ Tannarxni ko‘ra oladi" if ROLES[role]['see_cost']
+                     else "🚫 Tannarxni ko‘ra olmaydi")
         text = (
             f"✅ <b>Rol yangilandi!</b>\n\n"
             f"👤 Xodim: {employee.full_name}\n"
@@ -92,7 +94,7 @@ async def role_set(callback: types.CallbackQuery, state: FSMContext):
             f"📋 Ko'ra oladi: {', '.join(ROLES[role]['can_view'])}\n"
             f"✏️ O'zgartira oladi: {', '.join(ROLES[role]['can_edit']) or 'hech narsa'}\n"
             f"💰 Chegirma limiti: {ROLES[role]['discount_limit']}%\n"
-            f"{'👁️ Tannarxni ko\u2018ra oladi' if ROLES[role]['see_cost'] else '🚫 Tannarxni ko\u2018ra olmaydi'}"
+            f"{cost_text}"
         )
         await callback.message.answer(text, parse_mode="HTML")
     await state.clear()
@@ -102,12 +104,14 @@ async def role_matrix(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     text = "📖 <b>ROL MATRITSASI</b>\n\n"
     for role, info in ROLES.items():
+        cost_line = ("✅ Tannarxni ko‘radi" if info['see_cost']
+                     else "🚫 Tannarxni ko‘rmaydi")
         text += (
             f"{info['label']}\n"
             f"   📋 Ko'rish: {', '.join(info['can_view'])}\n"
             f"   ✏️ Tahrir: {', '.join(info['can_edit']) or '—'}\n"
             f"   💰 Chegirma limiti: {info['discount_limit']}%\n"
-            f"   {'✅ Tannarxni ko\u2018radi' if info['see_cost'] else '🚫 Tannarxni ko\u2018rmaydi'}\n\n"
+            f"   {cost_line}\n\n"
         )
     await callback.message.answer(text[:4000], parse_mode="HTML")
     await state.clear()

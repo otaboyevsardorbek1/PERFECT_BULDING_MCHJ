@@ -1351,6 +1351,17 @@ async def notification_background_task():
             
             # Rejalashtirilgan hisobotlarni yuborish
             await manager.send_scheduled_reports()
+            
+            # v4: eski yopilgan bot sessiyalarini tozalash (7 kundan eski)
+            try:
+                from database.session import get_db_session
+                from utils import bot_auth as _bot_auth
+                with get_db_session() as _db:
+                    cleaned = _bot_auth.cleanup_expired_sessions(_db)
+                if cleaned:
+                    logger.info(f"Eski sessiya yozuvlari tozalandi: {cleaned} ta")
+            except Exception as _e:
+                logger.warning(f"Sessiya tozalashda xatolik: {_e}")
         
         except Exception as e:
             logger.error(f"Error in notification background task: {e}")

@@ -478,6 +478,10 @@ class TestRefreshTokens:
         shifted = real_now + timedelta(days=2)
         auth_mod._now = lambda: shifted
         try:
+            # v4 idle timeout: foydalanuvchi "shifted paytida faol" bo'lgan holat
+            # (aks holda 2 kunlik harakatsizlik sessiyani idle_timeout bilan o'chiradi)
+            web_session.last_seen_at = shifted
+            session.commit()
             r = auth_client.post("/api/refresh", json={"refresh_token": login["refresh_token"]})
         finally:
             auth_mod._now = lambda: real_now
@@ -542,3 +546,120 @@ class TestRefreshTokens:
         assert auth_client.get("/api/me", headers=_auth_headers(second["token"])).status_code == 200
         # Birinchi o'lgan
         assert auth_client.get("/api/me", headers=_auth_headers(first["token"])).status_code == 401
+
+
+class TestIdleTimeout:
+    """v4: harakatsizlik timeout'i — darajalar bekor bo'ladi"""
+
+    def test_idle_timeout_kills_session_and_revokes_access(self, auth_client, session):
+        from datetime import timedelta
+        from config import SESSION_IDLE_MINUTES
+        from database import models as db_models
+
+        _make_employee(session, phone="+998901234567", role="sotuvchi", password="parol1234")
+        token = _login(auth_client, "+998901234567", "parol1234").json()["token"]
+        assert auth_client.get("/api/me", headers=_auth_headers(token)).status_code == 200
+
+        # SESSION_IDLE_MINUTES dan ko'p jim turgan holat
+        web_session = session.query(db_models.WebSession).first()
+        web_session.last_seen_at = datetime.utcnow() - timedelta(
+            minutes=SESSION_IDLE_MINUTES + 2)
+        session.commit()
+
+        r = auth_client.get("/api/me", headers=_auth_headers(token))
+        assert r.status_code == 401
+        session.expire_all()
+        ws = session.query(db_models.WebSession).first()
+        assert ws.revoked_at is not None
+        assert ws.revoke_reason == "idle_timeout"
+
+    def test_refresh_after_idle_timeout_rejected(self, auth_client, session):
+        from datetime import timedelta
+        from config import SESSION_IDLE_MINUTES
+        from database import models as db_models
+
+        _make_employee(session, phone="+998901234567", role="sotuvchi", password="parol1234")
+        login = _login(auth_client, "+998901234567", "parol1234").json()
+        web_session = session.query(db_models.WebSession).first()
+        web_session.last_seen_at = datetime.utcnow() - timedelta(
+            minutes=SESSION_IDLE_MINUTES + 2)
+        session.commit()
+
+        r = auth_client.post("/api/refresh", json={"refresh_token": login["refresh_token"]})
+        assert r.status_code == 401
+
+    def test_active_user_not_killed(self, auth_client, session):
+        """Faol foydalanuvchi (touch_session) idle timeout'ga tushmaydi"""
+        from datetime import timedelta
+        from config import SESSION_IDLE_MINUTES
+        from database import models as db_models
+
+        _make_employee(session, phone="+998901234567", role="sotuvchi", password="parol1234")
+        token = _login(auth_client, "+998901234567", "parol1234").json()["token"]
+        # Faol: har doim so'rov yuborib turadi (touch last_seen ni yangilaydi)
+        for _ in range(3):
+            web_session = session.query(db_models.WebSession).first()
+            web_session.last_seen_at = datetime.utcnow() - timedelta(
+                minutes=SESSION_IDLE_MINUTES - 5)
+            session.commit()
+            assert auth_client.get("/api/me", headers=_auth_headers(token)).status_code == 200
+
+
+class TestTamperedTokenVariants:
+    """v4: imzo base64 SATR sifatida qat'iy solishtiriladi (padding tuzog'i yopildi)"""
+
+    def test_variants_rejected(self, auth_client, session):
+        _make_employee(session, phone="+998901234567", role="direktor", password="parol1234")
+        good = _login(auth_client, "+998901234567", "parol1234").json()["token"]
+        body, sig = good.split(".")
+        alt = lambda ch: "A" if ch != "A" else "B"
+
+        # Paddingdan keyin axlat qo'shilsa (avval bu yaroqli deb o'tar edi)
+        assert auth_client.get("/api/me", headers=_auth_headers(good + "x")).status_code == 401
+        assert auth_client.get("/api/me", headers=_auth_headers(good + "junk")).status_code == 401
+        # Ortiqcha nuqta — 3 qism
+        assert auth_client.get("/api/me", headers=_auth_headers(good + ".junk")).status_code == 401
+        # Body o'zgartirilsa — imzo mos kelmaydi
+        bad_body = body[:-1] + alt(body[-1])
+        assert auth_client.get("/api/me",
+                               headers=_auth_headers(f"{bad_body}.{sig}")).status_code == 401
+        # Imzo o'zgartirilsa
+        bad_sig = sig[:-1] + alt(sig[-1])
+        assert auth_client.get("/api/me",
+                               headers=_auth_headers(f"{body}.{bad_sig}")).status_code == 401
+
+
+class TestPasswordChangeRevokesSessions:
+    """v4: parol o'zgarsa web + bot sessiyalari bekor bo'ladi"""
+
+    def test_admin_password_change_revokes_web_and_bot(self, auth_client, session):
+        from utils import bot_auth
+
+        admin = _make_employee(session, phone="+998901111111", role="direktor",
+                               is_admin=True, password="adminparol1")
+        target = _make_employee(session, name="Nishon Xodim", phone="+998902222222",
+                                role="sotuvchi", password="eskiparol1")
+
+        admin_login = _login(auth_client, "+998901111111", "adminparol1").json()
+        headers = _auth_headers(admin_login["token"])
+
+        # Nishonning web va bot sessiyalari
+        t_login = _login(auth_client, "+998902222222", "eskiparol1").json()
+        t_refresh = t_login["refresh_token"]
+        bot_auth.create_bot_session(session, target, telegram_id=555001)
+        session.commit()
+
+        # Admin nishon parolini o'zgartiradi
+        r = auth_client.post(f"/api/roles/{target.id}/password",
+                             json={"password": "yangiparol99"}, headers=headers)
+        assert r.status_code == 200
+
+        # Web refresh o'lgan
+        assert auth_client.post(
+            "/api/refresh", json={"refresh_token": t_refresh}).status_code == 401
+        # Eski parol endi ishlamaydi, yangi bilan kiriladi
+        assert _login(auth_client, "+998902222222", "eskiparol1").status_code == 401
+        assert _login(auth_client, "+998902222222", "yangiparol99").status_code == 200
+        # Bot sessiyasi bekor
+        session.expire_all()
+        assert bot_auth.get_active_bot_session(session, 555001) is None

@@ -134,10 +134,26 @@ cd web && PORT=3000 PY_API_URL=http://127.0.0.1:8000 node server.js
 # Brauzer: http://localhost:3000
 ```
 
-## 6. 📌 Keyingi qadamlar (tavsiya)
+## 6. ✅ Keyingi qadamlar — bajarildi (v4.1)
 
-1. **Rate limiting** — API'ga so'rov limiti qo'shish (TZ security bo'limi)
-2. **Xodim avans hisoboti** — haydovchi yo'l xarajatlarini fotosurat bilan yuklashi (TZ: A-bo'lim)
-3. **Yoqilg'i nazorati** — 1 km sarf me'yoridan oshsa direktor xabari (TZ: D-bo'lim)
-4. **Picking list / yig'ish varaqasi** — omborchi uchun buyurtma marshruti (TZ: 4-modul)
-5. **Docker + CI/CD** — TZ da to'liq konfiguratsiya berilgan, loyihaga qo'shish qolgan
+| Qadam | Holat | Qayerda |
+| :--- | :--- | :--- |
+| **Rate limiting** | ✅ Bajarildi | `dashboard/app.py` RateLimitMiddleware (IP+yo'l bo'yicha, login uchun 10/min) |
+| **Xodim avans hisoboti** | ✅ Bajarildi | `models.ExpenseReport`, `crud.create_expense_report`, bot + `/api/expenses/*` + Web UI |
+| **Yoqilg'i nazorati** | ✅ Bajarildi | `models.FuelLog`, `crud.get_fuel_efficiency` (L/100km, me'yor tekshiruvi), bot + `/api/fuel/*` + Web UI |
+| **Picking list / yig'ish varaqasi** | ✅ Bajarildi | `models.PickingList`, bot + `/api/picking/*` + Web UI (sektor bilan) |
+| **Docker + CI/CD** | ✅ Bajarildi | `Dockerfile`, `docker-compose.yml` (api/web/bot), `.github/workflows/ci.yml` (pytest + Node + build) |
+| **Shubhali harakat detektori** | ✅ Bajarildi | `models.SuspiciousActivity` + `/api/security/*` + Web UI |
+| **Sotuvchilar reytingi** | ✅ Bajarildi | `crud.get_seller_ratings` + `/api/sellers/ratings` + Web UI |
+| **Xodim ish vaqti** | ✅ Bajarildi | `handlers/employees.py` (kirish/chiqish, overtime) |
+| **Web UI (operatsion modullar)** | ✅ Bajarildi | `web/public/index.html` + `app.js` — 5 ta yangi sahifa |
+
+---
+
+## 7. 📊 v4.0/4.1 natijalari
+
+- **568 ta test o'tdi** (v4 bot-auth testlari bilan birga)
+- Bot: `/login`, `/sessiya`, `/logout`, `/parol` — sessiya 5–30 daqiqa, tugaganda barcha darajalar bekor
+- Web: qisqa muddatli access token + refresh (sliding) + idle timeout + logout revoke
+- Operatsion modullar endi bot, API va Web dashboard'da bir xil ishlaydi
+- Docker + GitHub Actions CI loyihaga qo'shildi

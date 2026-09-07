@@ -200,6 +200,110 @@ Rollarni botda: `👑 Admin paneli → 🔐 Rollar boshqaruvi` yoki `/rollar`.
 
 ---
 
+## 🆕 v4.1 — Operatsion modullar (yoqilg'i, avans, yig'ish, xavfsizlik, reyting)
+
+TZ bo'limlari A/D/4/F va "Xodim ish vaqti" asosida qo'shilgan modullar endi
+**bot + API + Web dashboard** uch qatlamda ham ishlaydi:
+
+| Modul | Bot | API | Web UI | Tavsif |
+| :--- | :-: | :-: | :-: | :--- |
+| ⛽ **Yoqilg'i nazorati** | ✅ | ✅ | ✅ | Haydovchi quyishni qayd etadi (litr, narx, spidometr); tizim L/100km hisoblab, me'yordan oshsa direktor ogohlantiriladi (`FUEL_NORM_LITERS_PER_100KM`) |
+| 🧾 **Avans hisoboti** | ✅ | ✅ | ✅ | Xodim yo'l haqi/ovqat/benzin xarajatini qayd etadi, direktor/buxgalter tasdiqlaydi; tasdiqlanganlar moliyaviy hisobotga qo'shiladi |
+| 📦 **Yig'ish varaqasi** | ✅ | ✅ | ✅ | Sotuv/shop buyurtmasi bo'yicha omborchi uchun ro'yxat (sektor bilan), yuklovchi/omborchi "tayyor" deb belgilaydi |
+| 🚨 **Shubhali harakat detektori** | ✅ | ✅ | ✅ | Tungi sotuv, katta chegirma, qaytarish ko'payishi va boshqa anomaliyalar avtomatik qayd etiladi, direktor hal qiladi |
+| 🏆 **Sotuvchilar reytingi** | ✅ | ✅ | ✅ | Har bir sotuvchining 30 kunlik savdosi, chek soni va o'rtacha cheki |
+| 🕰️ **Xodim ish vaqti** | ✅ | — | — | Kirish/chiqish vaqtini qayd etish, ishlagan va qo'shimcha soatlarni hisoblash (`handlers/employees.py`) |
+
+Web dashboard sahifalari: `⛽ Yoqilg'i nazorati`, `🧾 Avans hisobotlari`,
+`📦 Yig'ish varaqalari`, `🚨 Xavfsizlik`, `🏆 Sotuvchilar reytingi` —
+API endpointlari (`/api/fuel/*`, `/api/expenses/*`, `/api/picking/*`,
+`/api/security/*`, `/api/sellers/ratings`) bilan bog'langan.
+
+---
+
+## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
+
+```bash
+cd construction_factory_bot
+cp .env.example .env          # BOT_TOKEN, ADMIN_IDS kiriting
+
+docker-compose up -d --build
+#   api  -> http://localhost:8000   (FastAPI)
+#   web  -> http://localhost:3000   (Node.js frontend, /api -> api:8000)
+#   bot  -> Telegram bot (polling)
+```
+
+- `Dockerfile` — Python 3.11 + Node.js 20 (yagona image).
+- `docker-compose.yml` — 3 xizmat: api / web / bot; SQLite `database/`,
+  backups, logs, reports papkalari bind-mount bilan saqlanadi.
+- `.github/workflows/ci.yml` — har push/PR da: pytest (568+ test),
+  Node.js sintaksis tekshiruvi va Docker build.
+
+---
+
+## 🆕 v4.0 — Xavfsizlik: LOGIN/PAROL + SESSIYA (bot va web)
+
+TZ talabiga ko'ra har bir xodim tizimga **parol bilan kiradi** va qisqa muddatli
+sessiya oladi. Sessiya tugaganda (muddat yoki harakatsizlik) yoki logout
+gilganda xodimga berilgan **barcha darajalar (rol ruxsatlari) avtomatik bekor**
+bo'ladi — keyingi amal uchun qayta `/login` kerak.
+
+### Telegram bot
+
+| Buyruq | Vazifasi |
+| :--- | :--- |
+| `/login` | Telefon raqam + parol bilan sessiya ochish (birinchi kirishda telegram ID avtomatik bog'lanadi) |
+| `/sessiya` | Joriy sessiya holati: qolgan vaqt, harakatsizlik taymeri |
+| `/logout` | Sessiyani bekor qilish — darajalar darhol o'chadi |
+| `/parol` | Parolni o'rnatish/o'zgartirish (joriy parol bilan tasdiqlanadi) |
+
+- Parollar **PBKDF2-HMAC-SHA256** bilan xeshlanadi (web dashboard bilan **bir xil
+  format** — bir parol ham web, ham bot uchun ishlaydi).
+- Parol xato kiritilsa `BOT_LOGIN_MAX_ATTEMPTS` (3) marta — hisob
+  `BOT_LOGIN_LOCKOUT_MINUTES` (10 daqiqa) ga bloklanadi (bruteforce himoyasi).
+- Parol o'zgarsa xodimning **barcha faol sessiyalari** (bot + web) bekor qilinadi.
+- Har bir xabar/callback global middleware orqali sessiya tekshiruvidan o'tadi
+  (`main.py`) — sessiyasiz faqat `/start`, `/help`, `/cancel`, `/login`, `/logout`,
+  `/sessiya`, `/parol` ishlaydi.
+
+### Web dashboard
+
+- Access token muddati: `SESSION_MINUTES` (5–30 daqiqa, standart 15).
+- Harakatsizlik: `SESSION_IDLE_MINUTES` (25 daqiqa) dan oshsa sessiya
+  `idle_timeout` bilan o'ladi — keyingi so'rov 401 qaytaradi.
+- `POST /api/logout` sessiyani revoke qiladi: eski access ham refresh ham ishlamaydi.
+- `GET /api/me` javobida `session` (qolgan vaqt, idle) va `session_policy` bor —
+  UI avto-logout uchun ishlatiladi.
+
+### Direktor nazorati (API)
+
+```
+GET  /api/bot-sessions            Xodimlar bot sessiyalari tarixi (kim qachon kirdi, qanday tugagan)
+GET  /api/bot-sessions/policy     Sessiya siyosati (muddat, idle, blok qoidalari)
+POST /api/bot-sessions/revoke     Xodimning faol bot sessiyalarini bekor qilish
+                                  {"employee_id": 5} yoki {"telegram_id": 123}
+```
+
+### Sessiya sozlamalari (.env)
+
+```ini
+BOT_AUTH_ENABLED=true                 # false bo'lsa eski rejim (telegram_id bo'yicha)
+BOT_SESSION_MINUTES=15                # bot sessiya muddati (5..30 daqiqa, TZ)
+BOT_SESSION_IDLE_MINUTES=25           # harakatsizlik limiti
+BOT_LOGIN_MAX_ATTEMPTS=3              # xato parol limiti
+BOT_LOGIN_LOCKOUT_MINUTES=10          # blok muddati
+BOT_MAX_SESSIONS_PER_EMPLOYEE=2       # bir xodimga bir vaqtda nechta sessiya
+SESSION_MINUTES=15                    # web access token muddati (5..30 daqiqa, TZ)
+SESSION_IDLE_MINUTES=25               # web harakatsizlik limiti
+REFRESH_TOKEN_TTL_DAYS=30             # web refresh token (sliding)
+```
+
+> Eski tizimga ziyon yetkazmaslik uchun `BOT_AUTH_ENABLED=false` qilsangiz bot
+> avvalgi holatda (telegram_id bo'yicha ruxsat) ishlaydi. Web dashboard sessiyasi
+> esa har doim qisqa muddatli token + revoke bilan ishlaydi.
+
+---
+
 ## 🔌 REST API (Python)
 
 Barcha endpointlar `http://localhost:8000/api/...` (Node.js frontend orqali `http://localhost:3000/api/...`):
@@ -290,7 +394,7 @@ Ruxsatsiz: `401`; roli mos kelmasa: `403` — javob shakli `{"error": "..."}`.
 ## 🧪 Testlar
 
 ```bash
-pytest                # 400+ test (bot, DB, API auth, utils, shop, smena)
+pytest                # 568+ test (bot, DB, API auth, utils, shop, smena, sessiya)
 ```
 
 Testlar `tests/test_api/conftest.py` da admin (direktor) override bilan ishlaydi;
@@ -316,5 +420,13 @@ utils/access.py            # Ruxsatlar (rol matritsasi) yordamchisi
 dashboard/payments.py      # Click/Payme webhook'lari
 web/server.js              # Node.js web server (proxy)
 web/public/index.html      # Yangi dizayn (SPA)
-database/models.py         # + Customer, Payment, ReturnAct, Delivery, DeliveryLocation, Supplier, ProductUnit, Reservation, InventoryCheck
+handlers/operations.py     # Yoqilg'i, avans, yig'ish, xavfsizlik, reyting (bot)
+handlers/bot_auth.py       # Bot login/parol + sessiya (v4)
+handlers/employees.py      # Xodimlar + ish vaqti
+utils/bot_auth.py          # Bot sessiya logikasi (PBKDF2, login/lockout)
+utils/rate_limit.py        # API rate limiting
+Dockerfile                 # Yagona konteyner (Python + Node)
+docker-compose.yml         # api / web / bot xizmatlari
+../.github/workflows/ci.yml# CI: pytest + Node tekshiruvi + Docker build
+database/models.py         # + Customer, Payment, ReturnAct, Delivery, DeliveryLocation, Supplier, ProductUnit, Reservation, InventoryCheck, FuelLog, ExpenseReport, PickingList, SuspiciousActivity, WebSession, EmployeeAuthSession
 ```

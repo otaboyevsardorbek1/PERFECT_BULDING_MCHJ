@@ -269,9 +269,16 @@ class Employee(Base):
 class WebSession(Base):
     """Web dashboard sessiyalari (refresh token + revoke qilish uchun).
 
-    Access token HMAC'li va qisqa muddatli; refresh token shu jadvalda
-    xeshlangan holda saqlanadi va har foydalanishda (sliding) muddati uzaytiriladi.
-    Logout'da sessiya revoke qilinadi — eski access token ham ishlamay qoladi.
+    Access token HMAC'li va QISQA muddatli (SESSION_MINUTES, 5-30 daqiqa);
+    refresh token shu jadvalda xeshlangan holda saqlanadi va har foydalanishda
+    (sliding) muddati uzaytiriladi.
+
+    Xavfsizlik qoidalari:
+    - Logout'da sessiya revoke qilinadi — o'sha sessiyaga berilgan barcha darajalar
+      (ruxsatlar) bekor bo'ladi (eski access ham refresh ham ishlamaydi).
+    - Foydalanuvchi SESSION_IDLE_MINUTES dan uzoq harakatsiz tursa, sessiya
+      "idle_timeout" bilan bekor qilinadi (qayta login talab qilinadi).
+    - Parol o'zgarsa xodimning barcha sessiyalari bekor qilinadi.
     """
     __tablename__ = "web_sessions"
 
@@ -281,8 +288,32 @@ class WebSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)   # sliding muddat
     revoked_at = Column(DateTime, nullable=True)    # logout vaqti
+    revoke_reason = Column(String(30), nullable=True)  # logout|expired|idle_timeout|admin|password_change
+    last_seen_at = Column(DateTime, nullable=True)  # oxirgi so'rov vaqti (idle hisoblash uchun)
     last_used_at = Column(DateTime, nullable=True)  # oxirgi refresh vaqti
     user_agent = Column(String(250), nullable=True)
+
+class EmployeeAuthSession(Base):
+    """Telegram bot sessiyalari (v4: bot login/parol xavfsizligi).
+
+    TZ: har bir xodim botda /login orqali PAROL bilan tasdiqlanadi va
+    5-30 daqiqalik sessiya oladi. Sessiya tugaganda (muddat, idle) yoki
+    logout qilinganda xodimga berilgan BARCHA darajalar (rol ruxsatlari)
+    avtomatik bekor bo'ladi — keyingi buyruq uchun qayta /login kerak.
+    """
+    __tablename__ = "employee_auth_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False, index=True)
+    telegram_id = Column(Integer, nullable=False, index=True)  # qaysi chat'da ochilgan
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    expires_at = Column(DateTime, nullable=False)      # BOT_SESSION_MINUTES (5-30 daq)
+    last_activity = Column(DateTime, default=datetime.utcnow)  # idle hisoblash uchun
+    revoked_at = Column(DateTime, nullable=True)       # logout / idle_timeout vaqti
+    revoke_reason = Column(String(30), nullable=True)  # logout|expired|idle_timeout|admin|password_change
+    logout_at = Column(DateTime, nullable=True)        # foydalanuvchi /logout bosgan vaqt
+
+    employee = relationship("Employee")
 
 class PasswordResetRequest(Base):
     """Web dashboard parol tiklash so'rovlari (self-service: so'rov -> admin tasdig'i)"""
@@ -528,6 +559,9 @@ class Delivery(Base):
     started_at = Column(DateTime, nullable=True)
     delivered_at = Column(DateTime, nullable=True)
     cancelled_at = Column(DateTime, nullable=True)
+    # v4.1: haydovchi "Muammo" tugmasi (yo'l yopiq, mijoz yo'q va h.k.)
+    problem_reported = Column(String(255), nullable=True)
+    problem_at = Column(DateTime, nullable=True)
     note = Column(Text, nullable=True)
     created_by = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -956,6 +990,14 @@ EXTRA_COLUMNS = {
     "employees": [
         ("role", "VARCHAR(30)"),
         ("password_hash", "VARCHAR(255)"),
+    ],
+    "deliveries": [
+        ("problem_reported", "VARCHAR(255)"),
+        ("problem_at", "DATETIME"),
+    ],
+    "web_sessions": [
+        ("revoke_reason", "VARCHAR(30)"),
+        ("last_seen_at", "DATETIME"),
     ],
     "sales": [
         ("user_id", "INTEGER"),

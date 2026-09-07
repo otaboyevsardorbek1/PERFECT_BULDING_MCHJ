@@ -1,0 +1,58 @@
+# ============================================================
+# 🏗️ Qurilish Korxonasi — docker-compose (TZ: Deploy bo'limi)
+#
+#   cp .env.example .env    # BOT_TOKEN, ADMIN_IDS va boshqa kalitlar
+#   docker-compose up -d --build
+#
+# Xizmatlar:
+#   api   -> FastAPI REST API  (http://localhost:8000)
+#   web   -> Node.js frontend  (http://localhost:3000)  /api -> api:8000
+#   bot   -> Telegram bot (aiogram polling)
+#
+# Ma'lumotlar (SQLite construction.db, backups, logs, reports) shared volume'da
+# saqlanadi — konteyner qayta yaratilsa ham yo'qolmaydi.
+# ============================================================
+version: "3.8"
+
+services:
+  api:
+    build: .
+    restart: always
+    command: python -m uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    environment:
+      - SQLITE_DB_PATH=database/construction.db
+    volumes:
+      - ./database:/app/database
+      - ./backups:/app/backups
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    ports:
+      - "8000:8000"
+
+  web:
+    build: .
+    restart: always
+    command: node web/server.js
+    environment:
+      - PORT=3000
+      - PY_API_URL=http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  bot:
+    build: .
+    restart: always
+    command: python main.py
+    env_file: .env
+    environment:
+      - SQLITE_DB_PATH=database/construction.db
+    volumes:
+      - ./database:/app/database
+      - ./backups:/app/backups
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    depends_on:
+      - api

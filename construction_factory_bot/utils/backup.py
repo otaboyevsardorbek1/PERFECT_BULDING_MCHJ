@@ -398,7 +398,8 @@ async def _notify_backup(result: dict):
                 message += "\n🔓 Nusxa shifrlanmagan (BACKUP_ENCRYPTION_PASSWORD o'rnatilmagan)"
         else:
             title = "⚠️ Avtomatik backup olinmadi"
-            message = f"Database backupda xatolik yuz berdi:\n{result.get('error') or 'Noma\'lum xatolik'}"
+            backup_err = result.get("error") or "Noma'lum xatolik"
+            message = f"Database backupda xatolik yuz berdi:\n{backup_err}"
         await send_notification_to_admins(title, message, "system_alert")
     except Exception as e:
         logger.error(f"Backup xabarnomasini yuborishda xatolik: {e}")
@@ -443,8 +444,11 @@ def list_backup_files(backup_dir=None, limit: Optional[int] = None) -> List[Dict
         folder = Path(backup_dir) if backup_dir else BACKUP_DIR
         files = []
         if folder.exists():
+            # Fayl nomida vaqt belgilangan (backup_YYYYMMDD_HHMMSS.db) — nom bo'yicha
+            # saralash deterministik; st_mtime esa bir zumda yaratilgan fayllarda
+            # bir xil bo'lib qolishi mumkin (tartib buziladi).
             for f in sorted(folder.glob(f"{_BACKUP_PREFIX}*{_BACKUP_SUFFIX}"),
-                            key=lambda p: p.stat().st_mtime, reverse=True):
+                            key=lambda p: p.name, reverse=True):
                 if not f.is_file():
                     continue
                 try:

@@ -31,14 +31,30 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (  # noqa: E402
     BASE_DIR, ROLES, SECURITY_SETTINGS, get_role_label,
     role_can_edit, role_can_view, role_see_cost,
+    SESSION_MINUTES, SESSION_IDLE_MINUTES,
 )
 from database import models  # noqa: E402
 from database.session import get_db  # noqa: E402
 
 # =============== SOZLAMALAR ===============
-TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_HOURS", "12")) * 3600
+# Sessiya muddati (TZ: "5 minutdan 30 minutgacha sessiya saqlash"):
+# access token SESSION_MINUTES (5..30 daqiqa) muddatga beriladi. Eski
+# TOKEN_TTL_HOURS env'i o'rnatilgan bo'lsa, muvofiqlik uchun u ishlatiladi.
+SESSION_TTL_SECONDS = SESSION_MINUTES * 60
+SESSION_IDLE_SECONDS = SESSION_IDLE_MINUTES * 60
+_hours_env = os.getenv("TOKEN_TTL_HOURS", "").strip()
+if _hours_env:
+    try:
+        TOKEN_TTL_SECONDS = int(float(_hours_env) * 3600)
+    except ValueError:
+        TOKEN_TTL_SECONDS = SESSION_TTL_SECONDS
+else:
+    TOKEN_TTL_SECONDS = SESSION_TTL_SECONDS
 REFRESH_TOKEN_TTL_DAYS = int(os.getenv("REFRESH_TOKEN_TTL_DAYS", "30"))
 REFRESH_TOKEN_TTL_SECONDS = REFRESH_TOKEN_TTL_DAYS * 86400
+
+# Sessiya bekor qilish sabablari (audit uchun)
+SESSION_REVOKE_REASONS = ("logout", "expired", "idle_timeout", "admin", "password_change")
 PASSWORD_MIN_LENGTH = int(os.getenv(
     "WEB_PASSWORD_MIN_LENGTH",
     str(SECURITY_SETTINGS.get("password_min_length", 8)),
@@ -136,11 +152,20 @@ def issue_token(employee_id: int) -> str:
 
 
 def decode_token(token: str) -> Optional[Dict[str, Any]]:
-    """Tokenni tekshirib, payloadni qaytaradi (muddati o'tgan/yaroqsiz -> None)"""
+    """Tokenni tekshirib, payloadni qaytaradi (muddati o'tgan/yaroqsiz -> None)
+
+    Xavfsizlik (v4): imzo base64 SATR sifatida qat'iyyat bilan solishtiriladi.
+    Python b64 dekoderi padding '=' dan keyingi belgilarni e'tiborsiz qoldiradi,
+    shuning uchun _b64d(sig) orqali solishtirish "token + 'x'" kabi o'zgartirilgan
+    tokenni ham yaroqli deb qabul qilar edi. Qatorni to'g'ridan-to'g'ri qiyoslash
+    har qanday o'zgartirishni rad etadi.
+    """
     try:
         body, sig = token.split(".")
-        expected = hmac.new(SECRET.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest()
-        if not hmac.compare_digest(_b64d(sig), expected):
+        expected_sig = _b64e(
+            hmac.new(SECRET.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(sig, expected_sig):
             return None
         payload = json.loads(_b64d(body).decode("utf-8"))
         if payload.get("exp", 0) < time.time():
@@ -159,15 +184,71 @@ def _session_is_active(session: "models.WebSession") -> bool:
     return session is not None and session.revoked_at is None and session.expires_at > _now()
 
 
+def session_idle_seconds(session: "models.WebSession") -> Optional[int]:
+    """Sessiya necha sekund harakatsiz turgani (last_seen_at bo'lmasa None)"""
+    if session is None or session.last_seen_at is None:
+        return None
+    return max(0, int((_now() - session.last_seen_at).total_seconds()))
+
+
+def session_is_idle_timed_out(session: "models.WebSession") -> bool:
+    """Foydalanuvchi SESSION_IDLE_MINUTES dan ko'p harakatsiz turganmi"""
+    idle = session_idle_seconds(session)
+    return idle is not None and idle > SESSION_IDLE_SECONDS
+
+
+def touch_session(db: Session, session: "models.WebSession") -> None:
+    """Sessiya faolligini belgilash (harakatsizlik taymeri nolga tushadi).
+
+    Har so'rovda DB'ga yozmaslik uchun faqat oxirgi yozuvdan 30+ sekund o'tgan
+    bo'lsa yangilanadi — yetarli aniqlik, ortiqcha commit yo'q.
+    """
+    if session is None or session.revoked_at is not None:
+        return
+    now = _now()
+    if session.last_seen_at is None or (now - session.last_seen_at).total_seconds() >= 30:
+        session.last_seen_at = now
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+
+def session_to_dict(session: "models.WebSession") -> Dict[str, Any]:
+    """Sessiya ma'lumotini ochiq (xavfsiz) dict ko'rinishiga o'tkazadi"""
+    if session is None:
+        return {}
+    idle = session_idle_seconds(session)
+    return {
+        "id": session.id,
+        "created_at": session.created_at.isoformat() if session.created_at else None,
+        "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+        "last_seen_at": session.last_seen_at.isoformat() if session.last_seen_at else None,
+        "idle_seconds": idle,
+        "idle_timeout_seconds": SESSION_IDLE_SECONDS,
+        "is_revoked": session.revoked_at is not None,
+        "revoked_at": session.revoked_at.isoformat() if session.revoked_at else None,
+        "revoke_reason": session.revoke_reason,
+        "user_agent": session.user_agent,
+    }
+
+
 def create_web_session(db: Session, employee: models.Employee,
                        user_agent: str = "") -> Dict[str, Any]:
-    """Login'da sessiya yaratadi: {access_token, refresh_token, session}"""
+    """Login'da sessiya yaratadi: {access_token, refresh_token, session}
+
+    Access token muddati — SESSION_MINUTES (5-30 daqiqa). Refresh token muddati
+    REFRESH_TOKEN_TTL_DAYS (sliding), lekin harakatsizlik (SESSION_IDLE_MINUTES)
+    yoki logout bo'lsa sessiya o'lgan bo'ladi.
+    """
     from datetime import timedelta
     refresh_raw = _new_refresh_token()
+    now = _now()
     session = models.WebSession(
         employee_id=employee.id,
         refresh_hash=_hash_refresh_token(refresh_raw),
-        expires_at=_now() + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS),
+        expires_at=now + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS),
+        last_seen_at=now,
         user_agent=(user_agent or "")[:250],
     )
     db.add(session)
@@ -196,9 +277,13 @@ def refresh_session(db: Session, refresh_token: str) -> Optional[Dict[str, Any]]
     ).first()
     if not _session_is_active(session):
         return None
+    # Harakatsizlik timeout'i: SESSION_IDLE_MINUTES dan ko'p jim tursa — sessiya o'ladi
+    if session_is_idle_timed_out(session):
+        revoke_session(db, session_id=session.id, reason="idle_timeout")
+        return None
     # Sliding: muddatni hozirgi vaqtdan boshlab uzaytiramiz
     session.expires_at = _now() + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
-    session.last_used_at = _now()
+    session.last_seen_at = _now()
     new_refresh = _new_refresh_token()
     session.refresh_hash = _hash_refresh_token(new_refresh)
     db.commit()
@@ -213,8 +298,13 @@ def refresh_session(db: Session, refresh_token: str) -> Optional[Dict[str, Any]]
 
 
 def revoke_session(db: Session, session_id: int = None,
-                   refresh_token: str = None) -> bool:
-    """Sessiyani revoke qiladi (logout) — access ham refresh ham ishlamay qoladi"""
+                   refresh_token: str = None,
+                   reason: str = "logout") -> bool:
+    """Sessiyani revoke qiladi (logout/expired/admin) — access ham refresh ham ishlamay qoladi.
+
+    Sessiya o'lganda o'sha sessiya orqali berilgan barcha darajalar (ruxsatlar)
+    amal qilmas bo'ladi: get_current_user sid tekshiruvi 401 qaytaradi.
+    """
     query = db.query(models.WebSession)
     if session_id is not None:
         query = query.filter(models.WebSession.id == session_id)
@@ -227,9 +317,27 @@ def revoke_session(db: Session, session_id: int = None,
     session = query.first()
     if session is None:
         return False
-    session.revoked_at = _now()
+    if session.revoked_at is None:
+        session.revoked_at = _now()
+    session.revoke_reason = (reason or "logout")[:30]
     db.commit()
     return True
+
+
+def revoke_all_employee_sessions(db: Session, employee_id: int,
+                                 reason: str = "admin") -> int:
+    """Xodimning barcha faol web sessiyalarini bekor qiladi (masalan parol o'zgarsa)"""
+    sessions = db.query(models.WebSession).filter(
+        models.WebSession.employee_id == employee_id,
+        models.WebSession.revoked_at.is_(None),
+    ).all()
+    now = _now()
+    for s in sessions:
+        s.revoked_at = now
+        s.revoke_reason = (reason or "admin")[:30]
+    if sessions:
+        db.commit()
+    return len(sessions)
 
 
 # =============== FOYDALANUVCHI ===============
@@ -337,6 +445,9 @@ def get_current_user(
 
     Access token tarkibidagi sid (sessiya) revoke qilingan bo'lsa -> 401,
     shuning uchun logout'dan keyin eski token ham ishlamaydi.
+    Sessiya SESSION_IDLE_MINUTES dan ko'p harakatsiz tursa ham 401 bo'ladi
+    va sessiya "idle_timeout" sababi bilan bekor qilinadi — foydalanuvchi
+    qayta login qilib darajalarni yangidan oladi.
     """
     if credentials is None or not credentials.credentials:
         raise _unauthorized()
@@ -344,17 +455,23 @@ def get_current_user(
     if not payload:
         raise _unauthorized()
     sid = payload.get("sid")
+    web_session = None
     if sid is not None:
         web_session = db.query(models.WebSession).filter(
             models.WebSession.id == sid
         ).first()
         if web_session is None or web_session.revoked_at is not None:
             raise _unauthorized("Sessiya bekor qilingan (logout)")
+        if session_is_idle_timed_out(web_session):
+            revoke_session(db, session_id=sid, reason="idle_timeout")
+            raise _unauthorized("Sessiya harakatsizlik tufayli tugadi. Qayta kiring.")
     employee = db.query(models.Employee).filter(
         models.Employee.id == payload.get("uid")
     ).first()
     if not employee:
         raise _unauthorized("Xodim topilmadi")
+    if web_session is not None:
+        touch_session(db, web_session)
     user = AuthUser(employee)
     if request is not None:
         # Javob filtri (tannarx maydonlarini yashirish) uchun joriy foydalanuvchini saqlaymiz
@@ -371,6 +488,7 @@ def get_web_user(request: Request, db: Session) -> Optional[AuthUser]:
 
     Avval web_token cookie'sini, bo'lmasa Authorization: Bearer header'ini tekshiradi.
     Kirgan foydalanuvchi topilmasa -> None (sahifa login'ga yo'naltiriladi).
+    Harakatsizlik timeout'i bo'lsa sessiya bekor qilib None qaytaradi.
     """
     token = (request.cookies or {}).get(WEB_TOKEN_COOKIE, "") or ""
     if not token:
@@ -383,17 +501,23 @@ def get_web_user(request: Request, db: Session) -> Optional[AuthUser]:
     if not payload:
         return None
     sid = payload.get("sid")
+    web_session = None
     if sid is not None:
         web_session = db.query(models.WebSession).filter(
             models.WebSession.id == sid
         ).first()
         if web_session is None or web_session.revoked_at is not None:
             return None
+        if session_is_idle_timed_out(web_session):
+            revoke_session(db, session_id=sid, reason="idle_timeout")
+            return None
     employee = db.query(models.Employee).filter(
         models.Employee.id == payload.get("uid")
     ).first()
     if not employee:
         return None
+    if web_session is not None:
+        touch_session(db, web_session)
     return AuthUser(employee)
 
 
@@ -423,12 +547,27 @@ def require_any_edit(modules: List[str]):
 
 
 def set_employee_password(db: Session, employee: models.Employee, password: str):
-    """Xodim parolini o'rnatish (validatsiya bilan)"""
+    """Xodim parolini o'rnatish (validatsiya bilan).
+
+    Xavfsizlik: parol o'zgarsa xodimning BARCHA web sessiyalari bekor qilinadi —
+    eski tokenga berilgan darajalar amal qilmas bo'ladi.
+    v4: Bot sessiyalari ham bekor qilinadi — bot'da qayta /login talab qilinadi.
+    """
     if len(password or "") < PASSWORD_MIN_LENGTH:
         raise ValueError(
             f"Parol kamida {PASSWORD_MIN_LENGTH} belgidan iborat bo'lishi kerak"
         )
     employee.password_hash = hash_password(password)
+    try:
+        revoke_all_employee_sessions(db, employee.id, reason="password_change")
+    except Exception:
+        db.rollback()
+    # v4: Bot sessiyalarini ham bekor qilish (utils/bot_auth.py)
+    try:
+        from utils.bot_auth import revoke_all_employee_bot_sessions
+        revoke_all_employee_bot_sessions(db, employee.id, reason="password_change")
+    except Exception:
+        pass
     db.commit()
 
 

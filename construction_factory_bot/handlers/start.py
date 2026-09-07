@@ -5,6 +5,7 @@ from aiogram.filters import CommandStart, Command
 from keyboards.main_menu import get_main_menu
 from config import ADMIN_IDS
 from database.session import get_db_session
+from database import models
 
 async def cmd_start(message: types.Message, state: FSMContext):
     """Start command handler"""
@@ -13,13 +14,52 @@ async def cmd_start(message: types.Message, state: FSMContext):
     # Foydalanuvchini ADMIN_IDS ro'yxatida tekshirish
     is_admin = message.from_user.id in ADMIN_IDS
     
-    # Rolga qarab menyu
+    # Rolga qarab menyu + v4: sessiya holati
     role = None
+    auth_block = ""
     with get_db_session() as db:
         from utils.access import get_user_role, role_label
+        from utils import bot_auth
+
         role = get_user_role(db, message.from_user.id)
         role_text = role_label(db, message.from_user.id)
-    
+
+        # v4: Login/parol rejimi yoqilganmi va sessiya holati
+        if bot_auth.is_bot_auth_enabled():
+            emp = db.query(models.Employee).filter(
+                models.Employee.telegram_id == message.from_user.id
+            ).first()
+            has_password = bot_auth.employee_has_password(db, emp)
+            # Faol sessiya bo'lsa /login buyrug'ini ko'rsatish.
+            # Eslatma: bog'lanmagan ADMIN_IDS superuseri sessiyasiz ham
+            # ishlaydi — get_active_bot_session None qaytaradi, "Sessiya
+            # faol" emas, "kirish talab qilinadi" ko'rinmaydi (bypass).
+            session = bot_auth.get_active_bot_session(db, message.from_user.id)
+            admin_bypass = (
+                message.from_user.id in ADMIN_IDS and emp is None
+            )
+
+            if session is not None:
+                info = bot_auth.session_to_dict(session)
+                left = info.get("seconds_left", 0)
+                auth_block = (
+                    f"\n🟢 **Sessiya faol** — qolgan vaqt: {left // 60} daq {left % 60} sek\n"
+                    f"🚪 Chiqish: /logout | 📊 Holat: /sessiya"
+                )
+            elif admin_bypass:
+                auth_block = "\n🛡️ **Superuser rejimi** — sessiya talab qilinmaydi."
+            elif emp and not has_password:
+                auth_block = (
+                    "\n🔐 **Birinchi marta kirish:** /login buyrug'ini yuboring —\n"
+                    "telefoningiz bilan topilib, /parol orqali parol o'rnatiladi."
+                )
+            else:
+                auth_block = (
+                    "\n🔐 **Tizimga kirish talab qilinadi**\n"
+                    "➡️ /login buyrug'i bilan parolingizni kiriting.\n"
+                    "_Sessiya 5-30 daqiqa yashaydi; tugaganda qayta /login kerak._"
+                )
+
     welcome_text = f"""
     👋 Assalomu alaykum, {message.from_user.full_name}!
 
@@ -40,6 +80,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
         welcome_text += "\n\n👑 Siz **Administrator** maqomidasiz!"
     else:
         welcome_text += f"\n\n🔐 Sizning rolingiz: **{role_text}**"
+    
+    welcome_text += auth_block
     
     await message.answer(welcome_text, reply_markup=get_main_menu(role), parse_mode="Markdown")
 

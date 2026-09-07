@@ -29,6 +29,13 @@ _MAIN_ROWS = [
     ("ℹ️ Yordam", "all"),
 ]
 
+# Auth tugmalari (v4) — har doim ko'rinadi (login oldi/xavfsizlik boshqaruvi)
+_AUTH_ROWS = [
+    ("🔐 Kirish (login)", "all"),
+    ("📊 Sessiya holati", "all"),
+    ("🚪 Chiqish (logout)", "all"),
+]
+
 
 def get_main_menu(role: str = None):
     """
@@ -37,8 +44,9 @@ def get_main_menu(role: str = None):
     role berilsa — rolga ruxsat etilgan modullar ko'rsatiladi.
     """
     buttons = []
-    for i in range(0, len(_MAIN_ROWS), 2):
-        row_items = _MAIN_ROWS[i:i + 2]
+    all_rows = _MAIN_ROWS + _AUTH_ROWS
+    for i in range(0, len(all_rows), 2):
+        row_items = all_rows[i:i + 2]
         row_buttons = []
         for label, module in row_items:
             if role and module != "all" and not role_can_view(role, module):

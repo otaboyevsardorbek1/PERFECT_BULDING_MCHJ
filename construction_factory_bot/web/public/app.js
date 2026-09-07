@@ -29,6 +29,11 @@ const PAGES = {
   finance: "💰 Moliya",
   roles: "🔐 Rollar",
   backup: "💾 Backup va tiklash",
+  fuel: "⛽ Yoqilg'i nazorati",
+  expenses: "🧾 Avans hisobotlari",
+  picking: "📦 Yig'ish varaqalari",
+  security: "🚨 Shubhali harakatlar",
+  ratings: "🏆 Sotuvchilar reytingi",
 };
 /* Sahifa -> rol matritsasi moduli */
 const PAGE_MODULES = {
@@ -36,6 +41,8 @@ const PAGE_MODULES = {
   customers: "crm", suppliers: "supplier", receipts: "supplier",
   reservations: "stock_ops", transfers: "stock_ops", inventory: "stock_ops",
   finance: "finance", roles: "admin", backup: "admin",
+  fuel: "fuel", expenses: "expenses", picking: "picking",
+  security: "security", ratings: "ratings",
 };
 
 /* ---------- Auth ---------- */
@@ -668,11 +675,170 @@ async function renderBackup() {
   return content;
 }
 
+/* ---------- Operations module (TZ: yoqilg'i / avans / yig'ish / xavfsizlik / reyting) ---------- */
+
+async function renderFuel() {
+  const [logs, eff] = await Promise.all([
+    apiGet("/fuel/logs?limit=50").catch(() => []),
+    apiGet("/fuel/efficiency?days=30").catch(() => ({})),
+  ]);
+  const canEdit = canEditModule("fuel");
+  const effLines = [
+    `Quyishlar: <b>${fmtNum(eff.logs_count)}</b>`,
+    `Jami yoqilg'i: <b>${fmtNum(eff.total_liters)} L</b>`,
+    `Jami xarajat: <b>${fmtMoney(eff.total_cost)}</b>`,
+  ];
+  if (eff.avg_liters_per_100km != null) {
+    effLines.push(`O'rtacha sarf: <b>${fmtNum(eff.avg_liters_per_100km)} L/100km</b>` +
+      ` (me'yor: ${fmtNum(eff.norm_liters_per_100km)})`);
+    effLines.push(eff.over_norm
+      ? badge(`Me'yordan ${fmtNum(eff.over_norm_pct)}% oshgan`, "red")
+      : badge("Me'yor doirasida", "green"));
+  } else {
+    effLines.push(badge("Samaradorlik uchun spidometr kerak", "gray"));
+  }
+  const table = logs.length ? `
+    <table>
+      <thead><tr><th>Sana</th><th>Haydovchi</th><th>Mashina</th><th>Litr</th><th>Narx/L</th><th>Jami</th><th>Spidometr</th><th>Izoh</th></tr></thead>
+      <tbody>
+      ${logs.map((l) => `
+        <tr>
+          <td>${fmtDate(l.created_at)}</td>
+          <td>${esc(l.driver_name || "-")}</td>
+          <td>${esc(l.vehicle || "-")}</td>
+          <td>${fmtNum(l.liters)} L</td>
+          <td>${l.price_per_liter ? fmtMoney(l.price_per_liter) : "-"}</td>
+          <td>${fmtMoney(l.total_cost)}</td>
+          <td>${l.odometer_km != null ? fmtNum(l.odometer_km) + " km" : "-"}</td>
+          <td>${esc(l.note || "")}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>` : empty("Yoqilg'i qaydlari yo'q");
+  return `
+    ${cards([
+      { icon: "⛽", label: "30 kunlik sarf", value: fmtNum(eff.avg_liters_per_100km ?? 0) + " L/100km" },
+      { icon: "⛽", label: "Jami quyilgan (30 kun)", value: fmtNum(eff.total_liters) + " L" },
+      { icon: "💰", label: "Jami xarajat (30 kun)", value: fmtMoney(eff.total_cost) },
+    ])}
+    ${panel("⛽ Samaradorlik (30 kun)", `<div class="row">${effLines.map((l) => `<span>${l}</span>`).join("")}</div>`)}
+    ${panel("⛽ Quyish tarixi", table, canEdit ? `<button class="btn btn-primary btn-sm" data-add-fuel="1">➕ Yangi quyish</button>` : "")}
+  `;
+}
+
+async function renderExpenses() {
+  const [reports, totals] = await Promise.all([
+    apiGet("/expenses?limit=100").catch(() => []),
+    apiGet("/expenses/totals?days=30").catch(() => ({})),
+  ]);
+  const canEdit = canEditModule("expenses");
+  const canReview = canEditModule("finance");
+  const statusBadge = (s) =>
+    s === "tasdiqlangan" ? badge("✅ Tasdiqlangan", "green") :
+    s === "rad_etilgan" ? badge("❌ Rad etilgan", "red") : badge("⏳ Kutilmoqda", "yellow");
+  const rows = reports.length ? reports.map((r) => `
+    <tr>
+      <td class="mono">${esc(r.report_number)}</td>
+      <td>${esc(r.employee_name || "-")}</td>
+      <td>${esc(r.category)}</td>
+      <td>${fmtMoney(r.amount)}</td>
+      <td>${esc(r.description || "-")}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td>${fmtDate(r.created_at)}</td>
+      <td>${canReview && r.status === "kutilmoqda" ? `
+        <div class="btn-row">
+          <button class="btn btn-success btn-sm" data-expense-review="${r.id}" data-status="tasdiqlangan">✅ Tasdiqlash</button>
+          <button class="btn btn-danger btn-sm" data-expense-review="${r.id}" data-status="rad_etilgan">❌ Rad etish</button>
+        </div>` : "-"}</td>
+    </tr>`).join("") : "";
+  return `
+    ${cards([
+      { icon: "✅", label: "Tasdiqlangan (30 kun)", value: fmtMoney(totals.approved_total) },
+      { icon: "⏳", label: "Kutilayotgan", value: fmtNum((reports || []).filter((r) => r.status === "kutilmoqda").length) },
+      { icon: "📑", label: "Jami hisobotlar", value: fmtNum(reports.length) },
+    ])}
+    ${panel("🧾 Avans hisobotlari (xodim xarajatlari)",
+      reports.length ? `<table><thead><tr><th>Raqam</th><th>Xodim</th><th>Tur</th><th>Summa</th><th>Izoh</th><th>Holat</th><th>Sana</th><th>Harakat</th></tr></thead><tbody>${rows}</tbody></table>` : empty("Avans hisobotlari yo'q"),
+      canEdit ? `<button class="btn btn-primary btn-sm" data-add-expense="1">➕ Yangi xarajat</button>` : "")}
+  `;
+}
+
+async function renderPicking() {
+  const items = await apiGet("/picking?limit=100").catch(() => []);
+  const canEdit = canEditModule("picking");
+  const statusBadge = (s) =>
+    s === "tayyor" ? badge("✅ Tayyor", "green") :
+    s === "yuborilgan" ? badge("🚚 Yuborilgan", "blue") : badge("🆕 Yangi", "yellow");
+  const rows = items.length ? items.map((p) => `
+    <tr>
+      <td class="mono">${esc(p.picking_number)}</td>
+      <td>${esc(p.product_name || "-")}</td>
+      <td>${fmtNum(p.quantity)} ${esc(p.unit || "")}</td>
+      <td>${esc(p.sector || "-")}</td>
+      <td>${statusBadge(p.status)}</td>
+      <td>${esc(p.picked_by || "-")}</td>
+      <td>${fmtDate(p.created_at)}</td>
+      <td>${canEdit && p.status === "yangi" ? `
+        <button class="btn btn-success btn-sm" data-picking-done="${p.id}">✅ Tayyor</button>` : "-"}</td>
+    </tr>`).join("") : "";
+  return `
+    ${cards([{ icon: "📦", label: "Yig'ish varaqalari", value: fmtNum(items.length) }])}
+    ${panel("📦 Yig'ish varaqalari (picking list)",
+      items.length ? `<table><thead><tr><th>Raqam</th><th>Mahsulot</th><th>Miqdor</th><th>Sektor</th><th>Holat</th><th>Yig'uvchi</th><th>Sana</th><th>Harakat</th></tr></thead><tbody>${rows}</tbody></table>` : empty("Yig'ish varaqalari yo'q"))}
+  `;
+}
+
+async function renderSecurity() {
+  const alerts = await apiGet("/security/alerts?limit=100").catch(() => []);
+  const canEdit = canEditModule("security");
+  const sevBadge = (s) =>
+    s === "high" ? badge("🔴 Yuqori", "red") :
+    s === "medium" ? badge("🟠 O'rtacha", "yellow") : badge("🟡 Past", "gray");
+  const statusBadge = (s) =>
+    s === "hal_qilingan" ? badge("✅ Hal qilingan", "green") :
+    s === "ko'rib_chiqilgan" ? badge("👀 Ko'rib chiqilgan", "blue") : badge("🆕 Yangi", "red");
+  const rows = alerts.length ? alerts.map((a) => `
+    <tr>
+      <td>${sevBadge(a.severity)}</td>
+      <td class="mono">${esc(a.activity_type)}</td>
+      <td>${esc(a.description || "-")}</td>
+      <td>${esc(a.user_name || "-")}</td>
+      <td>${statusBadge(a.status)}</td>
+      <td>${fmtDate(a.created_at)}</td>
+      <td>${canEdit && a.status !== "hal_qilingan" ? `
+        <button class="btn btn-success btn-sm" data-security-done="${a.id}">✅ Hal qilindi</button>` : "-"}</td>
+    </tr>`).join("") : "";
+  return `
+    ${cards([{ icon: "🚨", label: "Shubhali harakatlar", value: fmtNum(alerts.length) }])}
+    ${panel("🚨 Shubhali harakat detektori",
+      alerts.length ? `<table><thead><tr><th>Daraja</th><th>Tur</th><th>Tavsif</th><th>Foydalanuvchi</th><th>Holat</th><th>Sana</th><th>Harakat</th></tr></thead><tbody>${rows}</tbody></table>` : empty("Shubhali harakatlar yo'q — hammasi tinch ✅"))}
+  `;
+}
+
+async function renderRatings() {
+  const ratings = await apiGet("/sellers/ratings?days=30&limit=20").catch(() => []);
+  const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+  const rows = ratings.length ? ratings.map((r) => `
+    <tr>
+      <td>${medals[r.rank] || `${r.rank}.`}</td>
+      <td><b>${esc(r.seller)}</b></td>
+      <td>${fmtMoney(r.total_sales)}</td>
+      <td>${fmtNum(r.sales_count)}</td>
+      <td>${fmtMoney(r.avg_check)}</td>
+    </tr>`).join("") : "";
+  return `
+    ${cards([{ icon: "🏆", label: "Sotuvchilar (30 kun)", value: fmtNum(ratings.length) }])}
+    ${panel("🏆 Sotuvchilar reytingi (30 kun)",
+      ratings.length ? `<table><thead><tr><th>O'rin</th><th>Sotuvchi</th><th>Jami savdo</th><th>Sotuvlar</th><th>O'rtacha chek</th></tr></thead><tbody>${rows}</tbody></table>` : empty("Hozircha savdo qaydlari yo'q"))}
+  `;
+}
+
 const RENDERERS = {
   overview: renderOverview, warehouse: renderWarehouse, products: renderProducts,
   customers: renderCustomers, suppliers: renderSuppliers, receipts: renderReceipts,
   reservations: renderReservations, transfers: renderTransfers, inventory: renderInventory,
   finance: renderFinance, roles: renderRoles, backup: renderBackup,
+  fuel: renderFuel, expenses: renderExpenses, picking: renderPicking,
+  security: renderSecurity, ratings: renderRatings,
 };
 
 /* ---------- Routing ---------- */
@@ -853,6 +1019,115 @@ function bindContentEvents() {
         b.disabled = false;
       }
     }));
+
+  // ---------- Operations module (TZ: yoqilg'i / avans / yig'ish / xavfsizlik) ----------
+
+  // Yangi yoqilg'i quyish
+  document.querySelectorAll("[data-add-fuel]").forEach((b) =>
+    b.addEventListener("click", () => openAddFuelModal()));
+
+  // Yangi avans hisoboti (xodim xarajati)
+  document.querySelectorAll("[data-add-expense]").forEach((b) =>
+    b.addEventListener("click", () => openAddExpenseModal()));
+
+  // Avans hisobotini tasdiqlash/rad etish (direktor/buxgalter)
+  document.querySelectorAll("[data-expense-review]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const r = await apiPost(`/expenses/${b.dataset.expenseReview}/review`, {
+          status: b.dataset.status,
+        });
+        if (r.error) throw new Error(r.error);
+        toast(`✅ ${b.dataset.status === "tasdiqlangan" ? "Tasdiqlandi" : "Rad etildi"}`);
+        navigate("expenses");
+      } catch (e) { toast(e.message, "error"); }
+    }));
+
+  // Yig'ish varaqasini tayyor deb belgilash (omborchi/yuklovchi)
+  document.querySelectorAll("[data-picking-done]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const r = await apiPost(`/picking/${b.dataset.pickingDone}/status`, { status: "tayyor" });
+        if (r.error) throw new Error(r.error);
+        toast("✅ Yig'ish tayyor deb belgilandi");
+        navigate("picking");
+      } catch (e) { toast(e.message, "error"); }
+    }));
+
+  // Shubhali harakatni hal qilindi deb belgilash (direktor)
+  document.querySelectorAll("[data-security-done]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const r = await apiPost(`/security/alerts/${b.dataset.securityDone}/status`, { status: "hal_qilingan" });
+        if (r.error) throw new Error(r.error);
+        toast("✅ Hal qilindi deb belgilandi");
+        navigate("security");
+      } catch (e) { toast(e.message, "error"); }
+    }));
+}
+
+function openAddFuelModal() {
+  openModal("⛽ Yangi yoqilg'i quyish", `
+    <div class="form-group"><label>Litr *</label><input id="fuel-liters" type="number" step="0.01" class="form-control" placeholder="50"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Narx (so'm/L)</label><input id="fuel-price" type="number" class="form-control" placeholder="6800"></div>
+      <div class="form-group"><label>Spidometr (km)</label><input id="fuel-odo" type="number" class="form-control" placeholder="125400"></div>
+    </div>
+    <div class="form-group"><label>Mashina / raqam</label><input id="fuel-vehicle" class="form-control" placeholder="01A123BC"></div>
+    <div class="form-group"><label>Izoh</label><input id="fuel-note" class="form-control"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Bekor qilish</button>
+      <button class="btn btn-primary" id="fuel-submit">✅ Saqlash</button>
+    </div>`);
+  $("#fuel-submit").addEventListener("click", async () => {
+    const liters = parseFloat($("#fuel-liters").value);
+    if (!liters || liters <= 0) return toast("Litrlar sonini kiriting", "error");
+    try {
+      const r = await apiPost("/fuel/logs", {
+        liters,
+        vehicle: $("#fuel-vehicle").value.trim() || null,
+        odometer_km: parseFloat($("#fuel-odo").value) || null,
+        price_per_liter: parseFloat($("#fuel-price").value) || null,
+        note: $("#fuel-note").value.trim() || null,
+      });
+      if (r.error) throw new Error(r.error);
+      closeModal();
+      toast(`✅ Yoqilg'i qayd qilindi (${fmtMoney(r.total_cost)})`);
+      navigate("fuel");
+    } catch (e) { toast(e.message, "error"); }
+  });
+}
+
+function openAddExpenseModal() {
+  openModal("🧾 Yangi avans hisoboti", `
+    <div class="form-group"><label>Xarajat turi</label>
+      <select id="exp-category" class="form-control">
+        <option value="yoqilgi">⛽ Yoqilg'i</option>
+        <option value="yol_hagi">🚗 Yo'l haqi</option>
+        <option value="ovqat">🍽 Ovqat</option>
+        <option value="boshqa">📦 Boshqa</option>
+      </select></div>
+    <div class="form-group"><label>Summa (so'm) *</label><input id="exp-amount" type="number" class="form-control" placeholder="150000"></div>
+    <div class="form-group"><label>Izoh</label><input id="exp-desc" class="form-control" placeholder="Toshkentga yo'l"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Bekor qilish</button>
+      <button class="btn btn-primary" id="exp-submit">✅ Yuborish</button>
+    </div>`);
+  $("#exp-submit").addEventListener("click", async () => {
+    const amount = parseFloat($("#exp-amount").value);
+    if (!amount || amount <= 0) return toast("Summa kiriting", "error");
+    try {
+      const r = await apiPost("/expenses", {
+        category: $("#exp-category").value,
+        amount,
+        description: $("#exp-desc").value.trim() || null,
+      });
+      if (r.error) throw new Error(r.error);
+      closeModal();
+      toast(`✅ Avans hisoboti yuborildi: ${r.report_number}`);
+      navigate("expenses");
+    } catch (e) { toast(e.message, "error"); }
+  });
 }
 
 function openPayModal(customerId, customerName) {

@@ -158,6 +158,15 @@ ROLES = {
         "see_cost": False,
         "discount_limit": 0,
     },
+    "yuklovchi": {
+        # TZ rol matritsasi: "Yuklovchi — faqat o'ziga biriktirilgan ortish
+        # varaqalari (yig'ish/ortish) va buyurtma holati"
+        "label": "🏗️ Yuklovchi",
+        "can_view": ["warehouse", "stock_ops", "picking"],
+        "can_edit": ["picking"],
+        "see_cost": False,
+        "discount_limit": 0,
+    },
 }
 
 ROLE_LABELS = {key: val["label"] for key, val in ROLES.items()}
@@ -362,6 +371,19 @@ INTEGRATION_SETTINGS = {
     "api_secret_key": os.getenv("API_SECRET_KEY", "")
 }
 
+# =============== WEB SESSIYA XAVFSIZLIGI (v4) ===============
+# Xodim web dashboardga telefon+parol bilan kiradi va berilgan darajalar (ruxsatlar)
+# FAQAT sessiya amal qilish muddati davomida amal qiladi:
+#   - SESSiya boshida access token SESSION_MINUTES (5-30 daqiqa) muddatga beriladi
+#   - Faol foydalanuvchi SESSION_IDLE_MINUTES dan uzoq jim tursa, sessiya "idle_timeout"
+#   - Foydalanuvchi logout qilsa yoki sessiya o'lsa, o'sha sessiyaga berilgan barcha
+#     darajalar (access + refresh + rol ruxsatlari) server tomonda BEKOR qilinadi.
+SESSION_MINUTES = int(os.getenv("SESSION_MINUTES", "15"))  # 5..30 daqiqa oralig'ida
+SESSION_MINUTES = max(5, min(30, SESSION_MINUTES))
+# Sekundlar: sesiya muddati = access token TTL ham shu
+SESSION_IDLE_MINUTES = int(os.getenv("SESSION_IDLE_MINUTES", "25"))  # harakatsizlik timeout'i
+SESSION_IDLE_MINUTES = max(1, min(SESSION_MINUTES, SESSION_IDLE_MINUTES))
+
 # =============== WEB SOZLAMALARI (Node.js frontend) ===============
 WEB_SETTINGS = {
     "port": int(os.getenv("WEB_PORT", "3000")),
@@ -397,6 +419,43 @@ DEBT_REMINDER_DAYS = sorted(
 # qaytarish, ko'chirish) ogohlantirish yuboriladi. Ogohlantirish tovar harakatga
 # qaytguncha bir marta yuboriladi (SlowStockAlert jadvali unikalligi).
 SLOW_STOCK_DAYS = int(os.getenv("SLOW_STOCK_DAYS", "30"))
+
+# =============== HISOBDAN CHIQARISH (write-off) TASDIQ CHEGARASI (v4.1) ===============
+# TZ: "Mahsulotni hisobdan chiqarish (>1 mln so'm) direktorni SMS orqali tasdiqlatadi."
+# Qiymati shu summadan oshsa — direktor(lar)ga ogohlantirish + shubhali harakat
+# jurnaliga yoziladi (SuspiciousActivity).
+WRITE_OFF_ALERT_SUM = float(os.getenv("WRITE_OFF_ALERT_SUM", "1000000"))
+
+# Ombor mahsulotlari og'irlik sinflari (ortish sxemasi uchun):
+# "og'ir" tovarlar pastga, "yengil" tepaga qo'yiladi (TZ: 4-modul)
+LOADING_WEIGHT_CLASSES = {
+    "heavy": {"sement", "armatura", "rodbin", "metall", "g'isht", "gisht", "beton", "qum", "shag'al"},
+    "medium": {"kafel", "plitka", "blok", "gip"},
+    # qolganlari -> light
+}
+
+# =============== BOT XAVFSIZLIK: LOGIN/PAROL + SESSIYA (v4) ===============
+# Bot xodimlardan TELEGRAM LOGIN/PAROL talab qiladi (TZ: xavfsizlik bo'limi).
+# Har bir xodim parolini O'ZI birinchi marta /start orqali o'rnatadi yoki
+# admin WEB_DASHBOARDdan /api/roles/{id}/password orqali beradi.
+#
+# Sessiya qoidalari (TZ: "5 minutdan 30 minutgacha sessiya saqlash"):
+#   - Login muvaffaqiyatli bo'lsa BOT_SESSION_MINUTES (5-30 daqiqa) sessiya beriladi
+#   - Foydalanuvchi BOT_SESSION_IDLE_MINUTES dan ko'p jim tursa, sessiya
+#     "idle_timeout" bilan avtomatik bekor qilinadi
+#   - /logout buyrug'i yoki sessiya tugaganda berilgan BARCHA darajalar (rol
+#     ruxsatlari) bekor bo'ladi — yangi buyruq uchun qayta /login kerak
+#   - Parolni xato kiritish BOT_LOGIN_MAX_ATTEMPTS marta — BOT_LOGIN_LOCKOUT_MINUTES
+#     marta bloklanadi (bruteforce himoyasi)
+#   - Parol o'zgarsa (web yoki /parol) xodimning barcha faol sessiyalari bekor qilinadi
+BOT_AUTH_ENABLED = os.getenv("BOT_AUTH_ENABLED", "true").lower() == "true"
+BOT_SESSION_MINUTES = int(os.getenv("BOT_SESSION_MINUTES", "15"))
+BOT_SESSION_MINUTES = max(5, min(30, BOT_SESSION_MINUTES))  # TZ: 5..30 daqiqa
+BOT_SESSION_IDLE_MINUTES = int(os.getenv("BOT_SESSION_IDLE_MINUTES", "25"))
+BOT_SESSION_IDLE_MINUTES = max(1, min(BOT_SESSION_MINUTES, BOT_SESSION_IDLE_MINUTES))
+BOT_LOGIN_MAX_ATTEMPTS = int(os.getenv("BOT_LOGIN_MAX_ATTEMPTS", "3"))
+BOT_LOGIN_LOCKOUT_MINUTES = int(os.getenv("BOT_LOGIN_LOCKOUT_MINUTES", "10"))
+BOT_MAX_SESSIONS_PER_EMPLOYEE = int(os.getenv("BOT_MAX_SESSIONS_PER_EMPLOYEE", "2"))
 
 # =============== TEST SOZLAMALARI ===============
 TEST_SETTINGS = {

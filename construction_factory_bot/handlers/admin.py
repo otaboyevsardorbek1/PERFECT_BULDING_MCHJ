@@ -217,9 +217,10 @@ async def list_admins(callback_query: types.CallbackQuery):
     
     for idx, admin in enumerate(admins, 1):
         status = "✅ Faol" if admin.status == models.EmployeeStatus.ACTIVE else "⏸️ Ta'tilda"
+        tg_id_text = str(admin.telegram_id) if admin.telegram_id else "Noma'lum"
         admin_list += (
             f"{idx}. **{admin.full_name}**\n"
-            f"   📱 ID: {admin.telegram_id or 'Noma\'lum'}\n"
+            f"   📱 ID: {tg_id_text}\n"
             f"   📞 Tel: {admin.phone_number}\n"
             f"   🏢 Lavozim: {admin.position}\n"
             f"   📊 Holat: {status}\n"
@@ -309,8 +310,9 @@ async def perform_backup(callback_query: types.CallbackQuery):
                 parse_mode="Markdown"
             )
         else:
+            backup_error = result.get("error") or "Noma'lum xatolik"
             await callback_query.message.answer(
-                f"❌ **BACKUP OLINMADI!**\n\n{result.get('error') or 'Noma\'lum xatolik'}",
+                f"❌ **BACKUP OLINMADI!**\n\n{backup_error}",
                 parse_mode="Markdown"
             )
         
@@ -476,8 +478,9 @@ async def perform_restore(callback_query: types.CallbackQuery):
             except Exception as e:
                 logger.error(f"Tiklash logini yozishda xatolik: {e}")
         else:
+            restore_error = result.get("error") or "Noma'lum xatolik"
             await callback_query.message.answer(
-                f"❌ **TIKLASH BAJARILMADI!**\n\n{result.get('error') or 'Noma\'lum xatolik'}",
+                f"❌ **TIKLASH BAJARILMADI!**\n\n{restore_error}",
                 parse_mode="Markdown"
             )
     
@@ -612,9 +615,10 @@ async def perform_s3_restore(callback_query: types.CallbackQuery):
             except Exception as e:
                 logger.error(f"S3 tiklash logini yozishda xatolik: {e}")
         else:
+            s3_restore_error = result.get("error") or "Noma'lum xatolik"
             await callback_query.message.answer(
                 f"❌ **S3 NUSXADAN TIKLASH BAJARILMADI!**\n\n"
-                f"{result.get('error') or 'Noma\'lum xatolik'}",
+                f"{s3_restore_error}",
                 parse_mode="Markdown"
             )
     except Exception as e:
