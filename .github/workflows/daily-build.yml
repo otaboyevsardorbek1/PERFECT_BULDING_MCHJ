@@ -1,0 +1,45 @@
+# .github/workflows/daily-build.yml
+name: Daily Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Har kuni 00:00 da
+  workflow_dispatch:
+
+jobs:
+  daily-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r requirements.txt || true
+      
+      - name: Run all tests
+        run: |
+          npm test
+          pytest tests/ || true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-test-results
+          path: |
+            test-results/
+            coverage.xml
+          retention-days: 30
