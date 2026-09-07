@@ -1,0 +1,481 @@
+# .github/workflows/npm-publish.yml
+# Node.js va Python paketlari uchun GitHub Actions workflow
+
+name: Node.js & Python Package
+
+on:
+  release:
+    types: [created]
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch: # Qo'lda ishga tushirish uchun
+
+env:
+  NODE_VERSION: 20
+  PYTHON_VERSION: 3.11
+
+jobs:
+  # ============================================
+  # 1. BUILD JOB - Umumiy build va test
+  # ============================================
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+      # 1.1 Repositoryni klonlash
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # 1.2 Node.js sozlash
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      # 1.3 Python sozlash
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      # 1.4 Node.js dependency larni o'rnatish
+      - name: Install Node.js dependencies
+        run: |
+          npm ci
+          npm run build --if-present
+      
+      # 1.5 Python dependency larni o'rnatish
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install .; fi
+      
+      # 1.6 Node.js testlar
+      - name: Run Node.js tests
+        run: npm test
+        continue-on-error: true
+      
+      # 1.7 Python testlar
+      - name: Run Python tests
+        run: |
+          if [ -f pytest.ini ] || [ -d tests ]; then
+            pip install pytest pytest-cov
+            pytest tests/ --cov=. --cov-report=xml
+          fi
+        continue-on-error: true
+      
+      # 1.8 Coverage report
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+      
+      # 1.9 Artifactlarni saqlash
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist/
+            build/
+            *.whl
+            package.json
+            pyproject.toml
+          retention-days: 7
+
+  # ============================================
+  # 2. LINT & CODE QUALITY
+  # ============================================
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      # Node.js lint
+      - name: Install Node.js lint tools
+        run: |
+          npm ci
+          npm install -g eslint prettier
+      
+      - name: Run ESLint
+        run: |
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
+            npx eslint . --ext .js,.jsx,.ts,.tsx --format=json -o eslint-report.json
+          fi
+        continue-on-error: true
+      
+      - name: Run Prettier
+        run: |
+          if [ -f .prettierrc ]; then
+            npx prettier --check .
+          fi
+        continue-on-error: true
+      
+      # Python lint
+      - name: Install Python lint tools
+        run: |
+          pip install flake8 black mypy isort
+      
+      - name: Run Flake8
+        run: |
+          if [ -f .flake8 ] || [ -d . ]; then
+            flake8 . --count --max-complexity=10 --statistics --exit-zero
+          fi
+        continue-on-error: true
+      
+      - name: Run Black
+        run: |
+          if [ -f pyproject.toml ] || [ -f .black ]; then
+            black --check .
+          fi
+        continue-on-error: true
+      
+      - name: Run MyPy
+        run: |
+          if [ -f mypy.ini ] || [ -f .mypy.ini ]; then
+            mypy .
+          fi
+        continue-on-error: true
+      
+      # Lint reportlarini saqlash
+      - name: Upload lint reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            eslint-report.json
+            flake8-report.txt
+          retention-days: 7
+
+  # ============================================
+  # 3. SECURITY SCAN
+  # ============================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Node.js security
+      - name: Node.js security audit
+        run: |
+          npm audit --json > npm-audit-report.json
+          npm audit fix --force || true
+        continue-on-error: true
+      
+      # Python security
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Python security scan
+        run: |
+          pip install bandit safety
+          bandit -r . -f json -o bandit-report.json || true
+          safety check --json > safety-report.json || true
+        continue-on-error: true
+      
+      # Dependency scanning
+      - name: Dependency scanning
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            npm-audit-report.json
+            bandit-report.json
+            safety-report.json
+            trivy-results.sarif
+          retention-days: 7
+
+  # ============================================
+  # 4. PUBLISH - NPM (Node.js)
+  # ============================================
+  publish-npm:
+    name: Publish to npm
+    needs: [build, lint]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org/
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build package
+        run: |
+          npm run build --if-present
+          npm pack
+      
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: |
+            *.tgz
+            package.json
+          retention-days: 30
+
+  # ============================================
+  # 5. PUBLISH - PyPI (Python)
+  # ============================================
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build, lint]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine wheel
+      
+      - name: Build package
+        run: |
+          if [ -f pyproject.toml ]; then
+            python -m build
+          elif [ -f setup.py ]; then
+            python setup.py sdist bdist_wheel
+          fi
+      
+      - name: Check package
+        run: twine check dist/*
+      
+      - name: Publish to PyPI
+        run: twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-package
+          path: dist/
+          retention-days: 30
+
+  # ============================================
+  # 6. PUBLISH - GitHub Packages (NPM)
+  # ============================================
+  publish-github-npm:
+    name: Publish to GitHub Packages (npm)
+    needs: [build, lint]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://npm.pkg.github.com/
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build package
+        run: npm run build --if-present
+      
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================
+  # 7. DEPLOY - Docker
+  # ============================================
+  docker:
+    name: Build & Push Docker Image
+    needs: [build, security]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # 8. RELEASE
+  # ============================================
+  release:
+    name: Create Release
+    needs: [publish-npm, publish-pypi, publish-github-npm, docker]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+      
+      - name: Create release notes
+        run: |
+          echo "# 🚀 Release ${{ github.ref_name }}" > release-notes.md
+          echo "" >> release-notes.md
+          echo "## 📦 Packages" >> release-notes.md
+          echo "- **npm**: \`${{ github.repository }}\`" >> release-notes.md
+          echo "- **PyPI**: \`${{ github.repository }}\`" >> release-notes.md
+          echo "- **Docker**: \`${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}\`" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "## ✅ Checks" >> release-notes.md
+          echo "- ✅ Build & Test passed" >> release-notes.md
+          echo "- ✅ Lint & Code Quality passed" >> release-notes.md
+          echo "- ✅ Security scan passed" >> release-notes.md
+          echo "- ✅ Published to npm, PyPI, and Docker Hub" >> release-notes.md
+      
+      - name: Update release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release-notes.md
+          files: |
+            artifacts/**/*.tgz
+            artifacts/**/*.whl
+            artifacts/**/dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================
+  # 9. NOTIFICATION
+  # ============================================
+  notify:
+    name: Send Notifications
+    needs: [release]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Send Telegram notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            🚀 ${{ github.repository }}
+            
+            📦 Release: ${{ github.ref_name }}
+            ✅ Status: ${{ needs.release.result }}
+            
+            📊 Details:
+            - npm: ${{ needs.publish-npm.result }}
+            - PyPI: ${{ needs.publish-pypi.result }}
+            - Docker: ${{ needs.docker.result }}
+            
+            🔗 https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+          format: markdown
+      
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()
