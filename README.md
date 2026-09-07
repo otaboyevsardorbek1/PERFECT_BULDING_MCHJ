@@ -1,5 +1,7 @@
 # 🏗️ PERFECT BUILDING MCHJ — Qurilish Korxonasini Boshqarish Tizimi
 
+> 🌐 O'zbek tilida  |  🇷🇺 [Русская версия](README.ru.md)
+
 Qurilish materiallari **ishlab chiqarish + ulgurji/chakana savdo + ombor + logistika**
 uchun yagona, keng qamrovli avtomatlashtirilgan tizim: **Telegram Bot** orqali
 barcha operatsiyalar, **Web dashboard** orqali vizual boshqaruv va **REST API**
