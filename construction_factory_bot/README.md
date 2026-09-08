@@ -245,6 +245,18 @@ Texnik jihatlar:
 
 ---
 
+## 🆕 v5 — To'liq REST API + narx tarixi + yangi Web sahifalar (TZ 2-bo'lim)
+
+- **REST API v5** (`dashboard/api_v5.py`): spec'dagi API ro'yxati bo'yicha 70+ endpoint —
+  Users CRUD, Products (search/import/narx→tarix), Categories CRUD, Orders (sotuv yaratish),
+  Payments, Inventory (adjust/history), Reports (kunlik/haftalik/oylik/yillik/eksport),
+  Suppliers, Production, Warehouses CRUD, Auth aliaslar (`/api/auth/*`).
+- **Narx tarixi**: `product_price_history` jadvali — har narx o'zgarishi saqlanadi;
+  API `GET /api/products/{id}/price-history`, bot `💱 Narx tarixi`.
+- **Web UI 6 ta yangi sahifa** (`web/public/app_v5.js`): 💰 Sotuv (POS), 🏭 Ishlab chiqarish,
+  🚚 Yetkazib berish (imzo + GPS), ↩️ Qaytarish, 💵 Smena (kassa), 🛒 Do'kon buyurtmalari.
+- **PWA** (`manifest.json` + `sw.js`): mobil telefonda ilova kabi ishlaydi, offline rejim.
+
 ## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
 
 ```bash

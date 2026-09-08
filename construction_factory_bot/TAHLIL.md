@@ -175,3 +175,57 @@ cd web && PORT=3000 PY_API_URL=http://127.0.0.1:8000 node server.js
 | **Testlar** | ✅ Bajarildi | `tests/test_api/test_2fa.py` — 14 test (TOTP + API + web login) |
 
 **Natija: 582 ta test o'tdi** (568 + 14 yangi).
+
+---
+
+## 9. 🔍 v5 — Spec'ning REST API ro'yxati va qolgan funksiyalar to'liq tekshirildi
+
+> Audit: `construction_factory_bot.md` (9 457 qator) ning barcha funksional bo'limlari
+> kod bilan solishtirildi; **etishmayotgan REST API endpointlari, narx tarixi,
+> web UI sahifalari va PWA qo'shildi.**
+
+### 9.1 Yangi qo'shilgan qismlar
+
+| Modul | Nima qo'shildi | Qayerda |
+| :--- | :--- | :--- |
+| **REST API (spec 2-bo'lim)** | `dashboard/api_v5.py` — spec'ga mos 70+ endpoint | `/api/*` |
+| **Narx tarixi (TZ: "Sana bo'yicha")** | `ProductPriceHistory` jadvali, `record_price_change`, API + bot "💱 Narx tarixi" | `models`, `crud_v5`, `api_v5`, `handlers/warehouse` |
+| **Omborlar (Warehouses CRUD)** | `Warehouse` jadvali + GET/POST/PUT `/api/warehouses` | `models`, `crud_v5`, `api_v5` |
+| **Web UI — 6 ta yangi sahifa** | 💰 Sotuv (POS), 🏭 Ishlab chiqarish, 🚚 Yetkazib berish, ↩️ Qaytarish, 💵 Smena, 🛒 Do'kon buyurtmalari | `web/public/app_v5.js` |
+| **PWA (TZ: Mobil versiya)** | `manifest.json` + `sw.js` (offline rejim, network-first) | `web/public/` |
+
+### 9.2 Spec API ro'yxati bo'yicha holat
+
+| Spec endpoint guruhi | Holat |
+| :--- | :--- |
+| Auth (`/api/auth/login|logout|refresh|profile|register|verify-2fa`) | ✅ `api_v5` |
+| Users (CRUD + status + parol) | ✅ `api_v5` |
+| Products (CRUD, search, import, price→tarix, stock, low-stock, top-selling) | ✅ `api_v5` |
+| Categories (CRUD) | ✅ `api_v5` |
+| Customers (update, credit, debtors, orders) | ✅ `api_v5` |
+| Orders (sotuv yaratish, status, reserve, cancel) | ✅ `api_v5` |
+| Payments (list, create, daily) | ✅ `api_v5` |
+| Inventory (list, product, adjust, history) | ✅ `api_v5` |
+| Deliveries (imzo/signature) | ✅ `api_v5` |
+| Reports (daily/weekly/monthly/yearly/PL/debt/top-customers/category/export) | ✅ `api_v5` |
+| Suppliers (update, purchases) | ✅ `api_v5` |
+| Production (list, create, status) | ✅ `api_v5` |
+| Warehouses (CRUD) | ✅ `api_v5` |
+
+### 9.3 Natija
+
+- **603 ta test o'tdi** (582 + 21 yangi `tests/test_api/test_api_v5.py`)
+- Barcha modullar import toza, `node --check` toza
+- Router tartibi: `api_v5` avval ro'yxatdan o'tadi — literal yo'llar
+  (`/customers/debtors`, `/orders/sales`, `/inventory/history`) parametrli
+  yo'llardan ustun turadi
+- `CostVisibilityMiddleware` tannarx maydonlarini `see_cost=False` rollar uchun
+  kesishda davom etadi (yangi endpointlarda ham)
+
+### 9.4 Roadmap (spec'ning tashqi infratuzilma qismlari)
+
+Spec'dagi quyidagi bo'limlar bulut infratuzilmasi (K8s, Terraform, Helm,
+ArgoCD, Istio, OPA, monitoring stack) uchun namunaviy kodlar — ular mahalliy
+SQLite/PostgreSQL tizimiga tegishli emas va `PROJECT_GUIDE.md` "Kelajak"
+ro'yxatida saqlanadi. Ularni talab qilsangiz, alohida loyiha sifatida ishlab
+berish mumkin.

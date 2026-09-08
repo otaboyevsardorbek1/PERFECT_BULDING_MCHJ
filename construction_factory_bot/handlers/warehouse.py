@@ -5,7 +5,8 @@ from aiogram.types import ReplyKeyboardRemove
 from sqlalchemy import func
 
 from database.session import get_db_session
-from database.models import RawMaterial, Product, WarehouseTransaction, TransactionType
+from database.models import RawMaterial, Product, WarehouseTransaction, TransactionType, ProductPriceHistory
+from database import crud_v5
 from keyboards.main_menu import get_main_menu, get_confirm_keyboard
 import logging
 
@@ -17,6 +18,37 @@ class WarehouseStates(StatesGroup):
     waiting_material_quantity = State()
     waiting_material_price = State()
     confirm_add_material = State()
+
+
+async def show_price_history(message: types.Message):
+    """Narx tarixi (TZ: 'Sana bo'yicha narx tarixi') — so'nggi o'zgarishlar"""
+    from utils.access import ensure_access
+    if not await ensure_access(message, "warehouse"):
+        return
+    try:
+        with get_db_session() as db:
+            history = crud_v5.list_price_history(db, limit=15)
+            if not history:
+                await message.answer(
+                    "💱 Narx tarixi bo'sh.\n\n"
+                    "Narx o'zgarishlari web dashboard (Mahsulotlar → narxni o'zgartirish) "
+                    "yoki API orqali yoziladi."
+                )
+                return
+            lines = ["💱 *So'nggi narx o'zgarishlari:*\n"]
+            for h in history:
+                old = f"{h['old_price']:,.0f}" if h.get("old_price") is not None else "—"
+                typ = {"selling": "sotuv", "wholesale": "ulgurji",
+                       "retail": "chakana", "cost": "tannarx"}.get(h["price_type"], h["price_type"])
+                lines.append(
+                    f"▫️ {h['product_name']} ({typ})\n"
+                    f"   {old} → {h['new_price']:,.0f} so'm\n"
+                    f"   🕐 {h['changed_at'][:16].replace('T', ' ')} | {h['changed_by'] or '—'}\n"
+                )
+            await message.answer("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        logger.exception("Narx tarixi ko'rsatishda xatolik")
+        await message.answer(f"❌ Xatolik: {e}")
 
 
 async def show_warehouse_status(message: types.Message):
@@ -198,6 +230,7 @@ def register_handlers_warehouse(dp: Dispatcher):
     """Register warehouse handlers"""
     dp.message.register(show_warehouse_status, F.text == "📦 Ombor holati")
     dp.message.register(add_raw_material_start, F.text == "➕ Xom ashyo kiritish")
+    dp.message.register(show_price_history, F.text == "💱 Narx tarixi")
 
     dp.message.register(process_material_name, WarehouseStates.waiting_material_name)
     dp.message.register(process_material_unit, WarehouseStates.waiting_material_quantity)

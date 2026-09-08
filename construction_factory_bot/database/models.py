@@ -564,6 +564,10 @@ class Delivery(Base):
     # v4.1: haydovchi "Muammo" tugmasi (yo'l yopiq, mijoz yo'q va h.k.)
     problem_reported = Column(String(255), nullable=True)
     problem_at = Column(DateTime, nullable=True)
+    # v5: mijoz imzosi (TZ: "Yuk hujjatlari — barmoq izi / PIN bilan imzo")
+    signature_name = Column(String(100), nullable=True)   # imzo qoldirgan shaxs
+    signature_type = Column(String(20), default="pin")    # pin | fingerprint
+    signature_at = Column(DateTime, nullable=True)
     note = Column(Text, nullable=True)
     created_by = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -964,6 +968,48 @@ class PickingList(Base):
     # Aloqalar
     product = relationship("Product")
 
+class ProductPriceHistory(Base):
+    """Mahsulot narx tarixi (TZ: "Sana bo'yicha narx tarixi")
+
+    Har bir narx o'zgarishi yangi qator sifatida saqlanadi — eski narx
+    o'chirilmaydi, shuning uchun istalgan sanada kimga qanday narxda
+    sotilgani/bo'lgani ko'rinadi.
+    """
+    __tablename__ = "product_price_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_name = Column(String(100), nullable=True)      # nom o'zgarsa ham tarix tushunarli
+    old_price = Column(Float, nullable=True)
+    new_price = Column(Float, nullable=False)
+    price_type = Column(String(20), default="selling")    # selling | wholesale | retail | cost
+    reason = Column(String(100), nullable=True)            # "Aksiya", "Direktor qarori"...
+    changed_by = Column(String(100), nullable=True)        # kim o'zgartirgan
+    changed_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Aloqalar
+    product = relationship("Product")
+
+
+class Warehouse(Base):
+    """Omborlar katalogi (TZ: Warehouses — ombor CRUD)
+
+    Tizim 3 turdagi ombor bilan ishlaydi: xomashyo, tayyor mahsulot, brak.
+    Har bir omborning manzili, mas'uli, sektorlari va holati shu yerda.
+    """
+    __tablename__ = "warehouses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    warehouse_type = Column(String(30), default="tayyor")  # xomashyo | tayyor | brak | asosiy
+    address = Column(String(255), nullable=True)
+    manager_name = Column(String(100), nullable=True)      # mas'ul xodim
+    sectors = Column(String(100), nullable=True)           # "A1,B2,C3" — ombor xaritasi
+    is_active = Column(Boolean, default=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # =====================================================
 # AVTOMATIK SCHEMA MIGRATSIYA (eski construction.db ga)
 # Yangi ustunlar/jadvallarni qo'shadi, ma'lumot o'chirilmaydi
@@ -998,6 +1044,9 @@ EXTRA_COLUMNS = {
     "deliveries": [
         ("problem_reported", "VARCHAR(255)"),
         ("problem_at", "DATETIME"),
+        ("signature_name", "VARCHAR(100)"),
+        ("signature_type", "VARCHAR(20)"),
+        ("signature_at", "DATETIME"),
     ],
     "web_sessions": [
         ("revoke_reason", "VARCHAR(30)"),

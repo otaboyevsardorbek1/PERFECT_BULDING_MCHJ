@@ -132,6 +132,10 @@ app.add_middleware(RateLimitMiddleware)
 app.add_middleware(CostVisibilityMiddleware)
 
 # REST API v3 router (Node.js frontend foydalanadi)
+# v5 router avval ro'yxatdan o'tadi: literal yo'llar (masalan /customers/debtors,
+# /orders/sales) v3 dagi {customer_id}/{order_number} parametrli yo'llardan ustun turadi.
+from dashboard.api_v5 import router as api_v5_router
+app.include_router(api_v5_router)
 from dashboard.api_v3 import router as api_v3_router
 app.include_router(api_v3_router)
 

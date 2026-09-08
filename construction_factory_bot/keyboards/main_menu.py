@@ -20,6 +20,7 @@ _MAIN_ROWS = [
     ("📊 Statistika", "reports"),
     ("💵 Smena (kassa)", "cash_shift"),
     ("➕ Xom ashyo kiritish", "warehouse"),
+    ("💱 Narx tarixi", "warehouse"),
     ("📈 Hisobotlar", "reports"),
     ("📄 PDF hisobotlar", "reports"),
     ("📱 SMS xizmati", "sms"),

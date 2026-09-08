@@ -1226,6 +1226,10 @@ def get_available_product_qty(db: Session, product_id: int) -> float:
         models.WarehouseTransaction.product_id == product_id,
         models.WarehouseTransaction.transaction_type == models.TransactionType.PRODUCTION,
     ).scalar() or 0
+    adjusted = db.query(func.coalesce(func.sum(models.WarehouseTransaction.quantity), 0)).filter(
+        models.WarehouseTransaction.product_id == product_id,
+        models.WarehouseTransaction.transaction_type == models.TransactionType.INVENTORY,
+    ).scalar() or 0
     sold = db.query(func.coalesce(func.sum(models.WarehouseTransaction.quantity), 0)).filter(
         models.WarehouseTransaction.product_id == product_id,
         models.WarehouseTransaction.transaction_type == models.TransactionType.SALE,
@@ -1238,7 +1242,7 @@ def get_available_product_qty(db: Session, product_id: int) -> float:
         models.Reservation.product_id == product_id,
         models.Reservation.status == "faol",
     ).scalar() or 0
-    return (produced + returned - sold - reserved)
+    return (produced + returned - sold - reserved + adjusted)
 
 
 def create_reservation(db: Session, product_id: int, quantity: float,

@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🏗️ Qurilish Korxonasi — Boshqaruv Paneli v3</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -27,6 +30,12 @@
         <button class="nav-item" data-page="reservations">🔒 Rezervatsiya</button>
         <button class="nav-item" data-page="transfers">🔄 Ko'chirish</button>
         <button class="nav-item" data-page="inventory">📋 Inventarizatsiya</button>
+        <button class="nav-item" data-page="sales">💰 Sotuv (POS)</button>
+        <button class="nav-item" data-page="production">🏭 Ishlab chiqarish</button>
+        <button class="nav-item" data-page="deliveries">🚚 Yetkazib berish</button>
+        <button class="nav-item" data-page="returns">↩️ Qaytarish</button>
+        <button class="nav-item" data-page="cashshifts">💵 Smena (kassa)</button>
+        <button class="nav-item" data-page="shoporders">🛒 Do'kon buyurtmalari</button>
         <button class="nav-item" data-page="finance">💰 Moliya</button>
         <button class="nav-item" data-page="roles">🔐 Rollar</button>
         <button class="nav-item" data-page="backup">💾 Backup</button>
@@ -168,5 +177,12 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="/app.js"></script>
+  <script src="/app_v5.js"></script>
+  <script>
+    // PWA: service worker'ni ro'yxatdan o'tkazish (offline rejim uchun)
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  </script>
 </body>
 </html>

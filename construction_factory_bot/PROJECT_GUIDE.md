@@ -797,6 +797,53 @@ class AIModule:
 
 ---
 
+## 8. 🆕 v5 — To'liq REST API + narx tarixi + yangi Web sahifalar (TZ asosida)
+
+### 8.1 v5 nima qo'shdi
+
+| Modul | Tavsif | Fayllar |
+| :--- | :--- | :--- |
+| **REST API v5** | `construction_factory_bot.md` 2-bo'limidagi spec API ro'yxati bo'yicha 70+ endpoint: Users, Products, Categories, Orders (sotuv), Payments, Inventory, Reports, Suppliers, Production, Warehouses, Auth aliaslar | `dashboard/api_v5.py` |
+| **Narx tarixi** | Har bir narx o'zgarishi `product_price_history` jadvaliga yangi qator sifatida yoziladi — istalgan sana uchun eski/yangi narx ko'rinadi. API: `GET /api/products/{id}/price-history`, bot: `💱 Narx tarixi` | `database/models.py`, `database/crud_v5.py` |
+| **Omborlar** | `warehouses` jadvali + CRUD API (xomashyo/tayyor/brak turlari, sektorlar, mas'ul) | `database/crud_v5.py`, `api_v5` |
+| **Web UI (6 sahifa)** | 💰 Sotuv (POS), 🏭 Ishlab chiqarish, 🚚 Yetkazib berish (+ imzo, GPS), ↩️ Qaytarish, 💵 Smena (kassa), 🛒 Do'kon buyurtmalari | `web/public/app_v5.js`, `index.html` |
+| **PWA** | `manifest.json` + `sw.js` — mobil telefonda ilova kabi ishlaydi, offline rejimda oxirgi nusxa ko'rinadi | `web/public/` |
+
+### 8.2 API tez ma'lumotnoma (v5)
+
+```
+POST /api/auth/login|logout|refresh|verify-2fa   # spec aliaslar
+GET|PUT /api/auth/profile                        # profil
+GET|POST /api/users · GET|PUT|DELETE /api/users/{id}
+PUT /api/users/{id}/status|password
+GET /api/products · POST /api/products · PUT /api/products/{id}
+PUT /api/products/{id}/price (narx tarixiga yozadi)
+PUT /api/products/{id}/stock · POST /api/products/import
+GET /api/products/search|low-stock|top-selling|{id}/price-history
+GET|POST /api/categories · PUT|DELETE /api/categories/{name}
+PUT /api/customers/{id} · PUT /api/customers/{id}/credit
+GET /api/customers/debtors|{id}/orders
+POST /api/orders (sotuv) · PUT /api/orders/{num}/status · DELETE /api/orders/{num}
+POST /api/orders/{num}/reserve · PUT /api/orders/{num}/cancel-reserve
+GET|POST /api/payments · GET /api/payments/daily
+GET /api/inventory · GET /api/inventory/{product_id}
+PUT /api/inventory/adjust · GET /api/inventory/history
+POST /api/deliveries/{id}/signature
+GET /api/reports/daily|weekly|monthly|yearly|profit-loss|debt|top-customers|sales-by-category
+POST /api/reports/export (CSV/Excel)
+PUT /api/suppliers/{id} · GET /api/suppliers/{id}/purchases
+GET|POST /api/production · PUT /api/production/{id}/status
+GET|POST /api/warehouses · PUT /api/warehouses/{id}
+```
+
+### 8.3 Eslatma
+
+- Router tartibi: `api_v5` avval ro'yxatdan o'tadi — literal yo'llar parametrli yo'llardan ustun turadi.
+- `see_cost=False` rollar uchun tannarx maydonlari `CostVisibilityMiddleware` orqali kesiladi (yangi endpointlarda ham).
+- Web UI yangi sahifalari `app_v5.js` da — `app.js`'ga tegmaydi, global `PAGES`/`RENDERERS`'ni kengaytiradi.
+
+---
+
 ## 📝 Xulosa
 
 Bu loyiha **to'liq va keng qamrovli** tizim. Quyidagi yo'nalishlarni rivojlantirish mumkin:
