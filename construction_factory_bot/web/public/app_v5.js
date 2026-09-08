@@ -41,13 +41,29 @@
     ).join("");
 
   /* ================= 💰 SOTUV (POS) ================= */
+  const lookupCard = `
+    <div class="panel">
+      <div class="panel-header"><h3>🔍 Hujjat izlash (16 xonali tranzaksiya kodi)</h3></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <label>Tranzaksiya kodi
+            <input id="v5-lookup-code" placeholder="masalan: 2609081234567890" maxlength="16">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="v5LookupDoc()">🔎 Topish</button>
+        </div>
+        <div id="v5-lookup-result"></div>
+      </div>
+    </div>`;
+
   async function renderSales() {
     const [prod, orders, cust] = await Promise.all([
       api("/products"), api("/orders/sales"), api("/customers"),
     ]);
     const products = prod.products || [];
     const customers = cust.customers || [];
-    const form = `
+    const form = lookupCard + `
       <div class="panel">
         <div class="panel-header"><h3>🛒 Yangi sotuv (buyurtma)</h3></div>
         <div class="panel-body">
@@ -94,6 +110,7 @@
         <td>${esc(o.customer_name || "—")}</td>
         <td>${esc(o.payment_method || "—")}${o.is_credit ? " 🧾" : ""}</td>
         <td>${badge(o.credit_status || o.status || "—", o.status === "cancelled" ? "red" : "green")}</td>
+        <td style="font-family:monospace;font-size:.8em">${esc(o.transaction_code || "—")}</td>
         <td>
           <button class="btn btn-small" data-v5-cancel-order="${esc(o.invoice_number)}"
             ${o.status === "cancelled" ? "disabled" : ""}>Bekor</button>
@@ -103,8 +120,8 @@
     return form + panel("📋 Oxirgi sotuvlar",
       `<div class="table-wrap"><table><thead><tr>
         <th>Chek №</th><th>Mahsulot</th><th>Miqdor</th><th>Summa</th><th>To'langan</th>
-        <th>Mijoz</th><th>Usul</th><th>Holat</th><th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="9">${empty("Sotuvlar yo'q")}</td></tr>`}</tbody></table></div>`);
+        <th>Mijoz</th><th>Usul</th><th>Holat</th><th>🔖 Tranzaksiya</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="10">${empty("Sotuvlar yo'q")}</td></tr>`}</tbody></table></div>`);
   }
 
   window.v5SetSalePrice = function (el) {
@@ -145,12 +162,45 @@
       if (r.error) throw new Error(r.error);
       openModal("✅ Sotuv rasmiylashtirildi", `
         <p>Chek: <b>${esc(r.order.invoice_number)}</b></p>
+        <p>🔖 Tranzaksiya kodi: <b style="font-family:monospace">${esc(r.order.transaction_code || "—")}</b></p>
         <p>Summa: <b>${money(r.order.total_amount)}</b></p>
         <p>To'langan: <b>${money(r.order.paid_amount)}</b></p>
         ${r.order.is_credit ? `<p class="muted">🧾 Qolgan qism mijoz qarziga yozildi (${esc(r.order.credit_status)})</p>` : ""}
         <div class="form-actions"><button class="btn btn-primary" onclick="closeModal(); navigate('sales')">Yopish</button></div>`);
       navigate("sales");
     } catch (e) { toast(e.message, "error"); }
+  };
+
+  window.v5LookupDoc = async function () {
+    const code = ($("#v5-lookup-code") || {}).value?.trim?.() || "";
+    const out = $("#v5-lookup-result");
+    if (!out) return;
+    if (!/^\d{16}$/.test(code)) {
+      out.innerHTML = `<p class="muted">❌ 16 xonali raqam kiriting</p>`;
+      return;
+    }
+    out.innerHTML = `<p class="muted">⏳ Qidirilmoqda...</p>`;
+    try {
+      const r = await api("/documents/lookup?code=" + code);
+      if (r.error) throw new Error(r.error);
+      const d = r.document || {};
+      const typeLabel = { sale: "🧾 Sotuv cheki", return_act: "↩️ Qaytarish akti",
+        warehouse_transaction: "📦 Ombor harakati" }[r.type] || r.type;
+      out.innerHTML = `
+        <div class="panel" style="margin-top:8px">
+          <p><b>${typeLabel}</b> — <span style="font-family:monospace">${esc(d.transaction_code)}</span></p>
+          <p>📅 Sana: ${esc(d.sale_date || d.date || d.created_at || "—")}</p>
+          <p>🏭 ${esc(d.product_name || d.customer_name || "—")}${d.quantity ? ` x ${d.quantity}` : ""}</p>
+          ${d.total_amount ? `<p>💵 Summa: <b>${money(d.total_amount)}</b></p>` : ""}
+          ${d.amount ? `<p>💵 Summa: <b>${money(d.amount)}</b></p>` : ""}
+          ${d.invoice_number ? `<p>📋 Chek: ${esc(d.invoice_number)}</p>` : ""}
+          ${d.act_number ? `<p>📄 Akt: ${esc(d.act_number)}</p>` : ""}
+          ${d.document_number ? `<p>📄 Hujjat: ${esc(d.document_number)}</p>` : ""}
+          <p class="muted">👤 ${esc(d.user_name || d.created_by || "")} · ${esc(d.payment_method || d.transaction_type || d.refund_type || "")}</p>
+        </div>`;
+    } catch (e) {
+      out.innerHTML = `<p class="muted">❌ ${esc(e.message || "Topilmadi")}</p>`;
+    }
   };
 
   /* ================= 🏭 ISHLAB CHIQARISH ================= */

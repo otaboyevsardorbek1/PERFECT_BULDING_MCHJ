@@ -10,6 +10,8 @@ Operatsion modullar (v4) — TZ bo'yicha yangi darajaga ko'tarish
 Foydalanish: /operatsiyalar (yoki admin panelidan) → pastdagi tugmalar
 """
 
+import os
+import uuid
 from datetime import datetime
 
 from aiogram import F, Router, Dispatcher, types
@@ -21,6 +23,9 @@ from database import crud
 from database.session import get_db_session
 from keyboards.main_menu import get_main_menu
 from utils.access import ensure_access, get_user_role
+
+# TZ: "Avans hisoboti — xodim sarflagan pullarini fotosurat bilan yuklaydi"
+EXPENSE_PHOTO_DIR = "uploads/expenses"
 
 ops_router = Router()
 
@@ -35,6 +40,7 @@ class ExpenseStates(StatesGroup):
     category = State()
     amount = State()
     description = State()
+    photo = State()
 
 
 # ==================== ASOSIY MENYU ====================
@@ -263,20 +269,58 @@ async def expense_get_amount(message: types.Message, state: FSMContext):
 @ops_router.message(ExpenseStates.description)
 async def expense_get_description(message: types.Message, state: FSMContext):
     data = await state.get_data()
+    data["description"] = (message.text or "").strip() or None
+    await state.update_data(description=data["description"])
+    await state.set_state(ExpenseStates.photo)
+    await message.answer(
+        "📎 Chek/xarajat <b>fotosuratini yuklang</b> (ixtiyoriy).\n\n"
+        "Rasm yubormasangiz, <b>O'tkazib yuborish</b> deb yozing:",
+        parse_mode="HTML",
+    )
+
+
+@ops_router.message(ExpenseStates.photo)
+async def expense_get_photo(message: types.Message, state: FSMContext):
+    """Avans hisobotiga ixtiyoriy chek fotosuratini biriktiradi (TZ)."""
+    data = await state.get_data()
+    photo_path = None
+
+    if message.text and message.text.strip().lower() in ("otkazib yuborish", "o'tkazib yuborish", "skip"):
+        pass  # foto ixtiyoriy
+    elif message.photo:
+        try:
+            os.makedirs(EXPENSE_PHOTO_DIR, exist_ok=True)
+            photo = message.photo[-1]
+            fname = f"exp_{uuid.uuid4().hex[:12]}.jpg"
+            photo_path = f"{EXPENSE_PHOTO_DIR}/{fname}"
+            file = await message.bot.get_file(photo.file_id)
+            await message.bot.download_file(file.file_path, photo_path)
+        except Exception:
+            photo_path = None
+    else:
+        await message.answer(
+            "❌ Rasm yuboring yoki <b>O'tkazib yuborish</b> deb yozing.",
+            parse_mode="HTML",
+        )
+        return
+
     with get_db_session() as db:
         report = crud.create_expense_report(db, {
             "employee_name": message.from_user.full_name or message.from_user.username or "",
             "category": data.get("category", "boshqa"),
             "amount": data.get("amount"),
-            "description": (message.text or "").strip() or None,
+            "description": data.get("description"),
+            "photo_path": photo_path,
             "created_by": message.from_user.full_name or message.from_user.username or "",
         })
     await state.clear()
+    photo_label = "✅ bor" if photo_path else "❌ yo'q"
     await message.answer(
         f"✅ <b>Avans hisoboti yuborildi</b>\n\n"
         f"📄 Raqam: <b>{report.report_number}</b>\n"
         f"🏷 Tur: <b>{report.category}</b>\n"
-        f"💵 Summa: <b>{report.amount:,.0f} so'm</b>\n\n"
+        f"💵 Summa: <b>{report.amount:,.0f} so'm</b>\n"
+        f"📎 Chek rasmi: {photo_label}\n\n"
         f"⏳ Direktor tasdiqlashini kuting.",
         parse_mode="HTML",
     )
@@ -295,11 +339,15 @@ async def expense_list(callback: types.CallbackQuery):
             lines.append(
                 f"\n<b>{r.report_number}</b> — {r.employee_name or '—'}\n"
                 f"💵 {r.amount:,.0f} so'm · {r.category}"
+                + (f" · 📎 rasm" if r.photo_path else "")
             )
             kb_rows.append([types.InlineKeyboardButton(
                 text=f"✅ {r.report_number} tasdiqlash", callback_data=f"exp_review_{r.id}_tasdiqlangan")])
             kb_rows.append([types.InlineKeyboardButton(
                 text=f"❌ {r.report_number} rad etish", callback_data=f"exp_review_{r.id}_rad_etilgan")])
+            if r.photo_path:
+                kb_rows.append([types.InlineKeyboardButton(
+                    text=f"🖼 {r.report_number} rasmi", callback_data=f"exp_photo_{r.id}")])
         kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
     else:
         lines.append("\n🎉 Kutilayotgan hisobotlar yo'q.")
@@ -323,6 +371,27 @@ async def expense_review_cb(callback: types.CallbackQuery):
     await callback.answer("✅ Holat yangilandi")
     await callback.message.delete()
     await expense_list(callback)
+
+
+@ops_router.callback_query(F.data.startswith("exp_photo_"))
+async def expense_photo_cb(callback: types.CallbackQuery):
+    """Direktor avans cheki fotosuratini ko'radi (TZ: Avans hisoboti)."""
+    await callback.answer()
+    report_id = int(callback.data.split("_")[2])
+    with get_db_session() as db:
+        report = db.query(crud.models.ExpenseReport).filter(
+            crud.models.ExpenseReport.id == report_id).first()
+    if not report or not report.photo_path or not os.path.exists(report.photo_path):
+        await callback.message.answer("❌ Rasm topilmadi.")
+        return
+    try:
+        await callback.message.answer_photo(
+            types.FSInputFile(report.photo_path),
+            caption=f"🧾 {report.report_number} — {report.employee_name or ''} · "
+                    f"{report.amount:,.0f} so'm ({report.category})",
+        )
+    except Exception as e:
+        await callback.message.answer(f"❌ Rasm yuborilmadi: {e}")
 
 
 # ==================== YIG'ISH VARAQASI ====================

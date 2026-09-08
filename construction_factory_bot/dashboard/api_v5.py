@@ -18,9 +18,9 @@ from database.session import get_db
 from dashboard.auth import (
     AuthUser, PASSWORD_MIN_LENGTH, create_web_session, employee_2fa_enabled,
     find_employee_by_phone, get_current_user, hash_password, issue_2fa_pending_token,
-    refresh_session, require_any_edit, require_role, revoke_session,
-    set_employee_password, user_to_dict, verify_2fa_code, verify_password,
-    effective_role, get_role_label,
+    mask_customer_dict, refresh_session, require_any_edit, require_role,
+    revoke_session, set_employee_password, user_to_dict, verify_2fa_code,
+    verify_password, effective_role, get_role_label,
 )
 from config import ROLES
 
@@ -617,7 +617,10 @@ def api_customer_debtors(db: Session = Depends(get_db),
     customers = crud.list_customers(db, limit=1000)
     debtors = [c for c in customers if float(c.total_debt or 0) > 0]
     debtors.sort(key=lambda c: c.total_debt, reverse=True)
-    return {"debtors": [crud.customer_to_dict(db, c) for c in debtors]}
+    return {"debtors": [
+        mask_customer_dict(crud.customer_to_dict(db, c), user)
+        for c in debtors
+    ]}
 
 
 @router.get("/customers/{customer_id}/orders")
@@ -654,6 +657,7 @@ def api_orders_sales(status: Optional[str] = None, limit: int = 100,
     sales = q.order_by(desc(models.Sale.sale_date)).limit(limit).all()
     return {"orders": [{
         "id": s.id, "invoice_number": s.invoice_number,
+        "transaction_code": s.transaction_code,
         "product_id": s.product_id,
         "product_name": s.product.name if s.product else None,
         "quantity": s.quantity, "unit_price": s.unit_price,
@@ -737,6 +741,7 @@ def api_create_order(data: dict, db: Session = Depends(get_db),
                            action=f"API: sotuv {sale.invoice_number}", module="sales")
     return {"order": {
         "id": sale.id, "invoice_number": sale.invoice_number,
+        "transaction_code": sale.transaction_code,
         "total_amount": sale.total_amount, "paid_amount": sale.paid_amount,
         "is_credit": sale.is_credit, "credit_status": sale.credit_status,
         "payment_method": sale.payment_method,
@@ -1264,4 +1269,82 @@ def api_update_warehouse(warehouse_id: int, data: dict, db: Session = Depends(ge
     if not wh:
         raise HTTPException(404, "Ombor topilmadi")
     return {"warehouse": crud_v5.warehouse_to_dict(wh)}
+
+
+# ================= HUJJAT IZLASH (TZ: "Tranzaksiya kodi") =================
+# Har bir operatsiyaga (sotuv, kirim/chiqim, qaytarish) unikal 16 xonali kod
+# beriladi. Bu endpoint orqali soliq tekshiruvida hujjat 1 daqiqada topiladi.
+
+
+def _sale_lookup_dict(s: models.Sale) -> dict:
+    return {
+        "id": s.id,
+        "invoice_number": s.invoice_number,
+        "transaction_code": s.transaction_code,
+        "product_name": s.product.name if s.product else None,
+        "quantity": s.quantity,
+        "unit_price": s.unit_price,
+        "total_amount": s.total_amount,
+        "discount_amount": s.discount_amount or 0,
+        "paid_amount": s.paid_amount or 0,
+        "customer_name": s.customer_name,
+        "payment_method": s.payment_method,
+        "is_credit": s.is_credit,
+        "credit_status": s.credit_status,
+        "sale_type": s.sale_type,
+        "user_name": s.user_name,
+        "sale_date": s.sale_date.isoformat() if s.sale_date else None,
+    }
+
+
+@router.get("/documents/lookup")
+def api_document_lookup(code: str, db: Session = Depends(get_db),
+                        user: AuthUser = Depends(require_any_view_v5(["reports", "finance", "sales"]))):
+    """16 xonali tranzaksiya kodi bo'yicha hujjatni topish (sotuv/kirim/chiqim/qaytarish)."""
+    from utils.transaction_codes import is_valid_transaction_code
+    code = (code or "").strip()
+    if not is_valid_transaction_code(code):
+        raise HTTPException(400, "Kod 16 xonali raqam bo'lishi kerak")
+
+    sale = db.query(models.Sale).filter(models.Sale.transaction_code == code).first()
+    if sale:
+        return {"found": True, "type": "sale", "document": _sale_lookup_dict(sale)}
+
+    ret = db.query(models.ReturnAct).filter(models.ReturnAct.transaction_code == code).first()
+    if ret:
+        return {"found": True, "type": "return_act", "document": {
+            "id": ret.id,
+            "act_number": ret.act_number,
+            "transaction_code": ret.transaction_code,
+            "sale_id": ret.sale_id,
+            "customer_name": ret.customer_name,
+            "product_name": ret.product_name or (ret.product.name if ret.product else None),
+            "quantity": ret.quantity,
+            "total_amount": ret.total_amount,
+            "reason": ret.reason,
+            "refund_type": ret.refund_type,
+            "refund_amount": ret.refund_amount,
+            "created_by": ret.created_by,
+            "created_at": ret.created_at.isoformat() if ret.created_at else None,
+        }}
+
+    txn = db.query(models.WarehouseTransaction).filter(
+        models.WarehouseTransaction.transaction_code == code
+    ).first()
+    if txn:
+        return {"found": True, "type": "warehouse_transaction", "document": {
+            "id": txn.id,
+            "transaction_code": txn.transaction_code,
+            "document_number": txn.document_number,
+            "product_name": txn.product.name if txn.product else None,
+            "quantity": txn.quantity,
+            "transaction_type": txn.transaction_type.value if txn.transaction_type else None,
+            "source_warehouse": txn.source_warehouse,
+            "target_warehouse": txn.target_warehouse,
+            "counterparty": txn.counterparty,
+            "user_name": txn.user_name,
+            "date": txn.date.isoformat() if txn.date else None,
+        }}
+
+    raise HTTPException(404, "Bunday kodli hujjat topilmadi")
 

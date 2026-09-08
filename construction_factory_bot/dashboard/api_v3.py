@@ -18,10 +18,10 @@ from dashboard.password_reset import (
 )
 from dashboard.auth import (
     AuthUser, PASSWORD_MIN_LENGTH, create_web_session, effective_role,
-    employee_2fa_enabled, find_employee_by_phone, get_current_user, refresh_session,
-    require_any_edit, require_role, revoke_all_employee_sessions, revoke_session,
-    session_to_dict, set_employee_password, touch_session, user_to_dict,
-    verify_2fa_code, verify_password,
+    employee_2fa_enabled, find_employee_by_phone, get_current_user, mask_customer_dict,
+    refresh_session, require_any_edit, require_role, revoke_all_employee_sessions,
+    revoke_session, session_to_dict, set_employee_password, touch_session,
+    user_to_dict, verify_2fa_code, verify_password,
 )
 from config import SESSION_IDLE_MINUTES, SESSION_MINUTES, role_can_view
 
@@ -344,7 +344,10 @@ def api_customers(db: Session = Depends(get_db),
             customers = crud.search_customers(db, q, limit=limit)
         else:
             customers = crud.list_customers(db, skip=skip, limit=limit)
-        return {"customers": [crud.customer_to_dict(db, c) for c in customers]}
+        return {"customers": [
+            mask_customer_dict(crud.customer_to_dict(db, c), user)
+            for c in customers
+        ]}
     except Exception as e:
         return {"error": str(e), "customers": []}
 
@@ -378,7 +381,7 @@ def api_create_customer(data: dict, db: Session = Depends(get_db),
         customer = crud.create_customer(db, payload)
         crud.create_system_log(db, action="API: mijoz qo'shildi",
                                details=customer.name, module="crm")
-        return {"customer": crud.customer_to_dict(db, customer)}
+        return {"customer": mask_customer_dict(crud.customer_to_dict(db, customer), user)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -396,7 +399,7 @@ def api_customer(customer_id: int, db: Session = Depends(get_db),
         models.Payment.created_at.desc()
     ).limit(20).all()
     return {
-        "customer": crud.customer_to_dict(db, c),
+        "customer": mask_customer_dict(crud.customer_to_dict(db, c), user),
         "sales": [{
             "id": s.id, "invoice_number": s.invoice_number,
             "total_amount": s.total_amount, "paid_amount": s.paid_amount,

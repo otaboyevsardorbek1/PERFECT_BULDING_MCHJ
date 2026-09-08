@@ -229,3 +229,32 @@ ArgoCD, Istio, OPA, monitoring stack) uchun namunaviy kodlar — ular mahalliy
 SQLite/PostgreSQL tizimiga tegishli emas va `PROJECT_GUIDE.md` "Kelajak"
 ro'yxatida saqlanadi. Ularni talab qilsangiz, alohida loyiha sifatida ishlab
 berish mumkin.
+
+## 10. 🔖 v5.1 — Qolgan TZ bo'shliqlari: Tranzaksiya kodi, avans fotosi, mijoz shifrlash
+
+> Qayta to'liq audit: `construction_factory_bot.md` ning "20+ nozik holat"
+> (A–H bo'limlari) va yakuniy tekshiruv ro'yxatlari kod bilan solishtirildi;
+> uchta aniq bo'shliq yopildi.
+
+| TZ talabi | Nima qo'shildi | Qayerda |
+| :--- | :--- | :--- |
+| **Tranzaksiya kodi** (A-bo'lim: "Har bir operatsiyaga unikal 16 xonali kod") | `transaction_code` (16 xonali, YYMMDD+10 raqam) `sales`, `return_acts`, `warehouse_transactions` jadvallarida; yangi qatorlarda avtomatik, eski qatorlarga `upgrade_schema` backfill; bot cheki va qaytarish aktida ko'rinadi | `models`, `utils/transaction_codes.py` |
+| **Hujjatni kod orqali topish** ("soliqchilar tekshiruvida 1 daqiqada") | `GET /api/documents/lookup?code=...` — sotuv/qaytarish/ombor harakatini topadi; web POS'da "🔍 Hujjat izlash" kartasi | `api_v5`, `app_v5.js` |
+| **Avans hisoboti fotosurati** (A-bo'lim: "fotosurat bilan yuklaydi") | `ExpenseReport.photo_path` ustuni; bot'da ixtiyoriy rasm qadami (Telegram'dan yuklab saqlaydi), direktor "🖼 rasmi" tugmasi orqali ko'radi | `models`, `handlers/operations.py` |
+| **Mijozlar ma'lumotlari shifrlash** (F-bo'lim: "sotuvchi faqat ism va qarzni ko'radi") | `mask_customer_dict` — direktor/haydovchi to'liq; qolgan rollar: telefon maskalanadi (`+998 ** *** ** 45`), manzil/izoh yashiriladi (server tomonda) | `auth.py`, `api_v3`, `api_v5` |
+
+### 10.1 Natija
+
+- **613 ta test o'tdi** (603 + 10 yangi `tests/test_api/test_v51.py`)
+- Barcha modullar import toza, `node --check` toza
+- Tranzaksiya kodi bot chekida (`🔖 Tranzaksiya`), qaytarish aktida va
+  web POS'da ko'rinadi; API orqali `orders` javoblarida ham bor
+- Bot'da avans hisoboti endi ixtiyoriy chek fotosuratini qabul qiladi
+  (direktor tasdiqlashdan oldin ko'radi)
+
+### 10.2 Eslatma
+
+- Web API orqali `POST /api/expenses` foto yuborish uchun mo'ljallanmagan
+  (web'da yuklash UI yo'q) — foto oqimi Telegram bot orqali ishlaydi.
+- Bot'dagi sotuvchilar mijoz telefonini ko'rishda davom etadi (mijoz bilan
+  bevosita aloqa uchun zarur); shifrlash web/API qatlamida qo'llanadi.

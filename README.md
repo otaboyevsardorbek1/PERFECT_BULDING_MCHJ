@@ -122,9 +122,23 @@ Direktor/kassir va istalgan xodim uchun parol + **6 xonali kod**:
 - `/api/auth/2fa/setup|enable|disable`, `/api/me` da `two_fa_enabled`
 - RFC 6238 TOTP (`utils/totp.py`), eski DB avtomatik migratsiya qilinadi
 
+### v5 — To'liq REST API + Narx tarixi + Web sahifalar + PWA
+- 70+ endpoint (`dashboard/api_v5.py`): Users, Products (search/import/narx→tarix),
+  Categories, Orders (sotuv), Payments, Inventory, Reports (eksport), Suppliers,
+  Production, Warehouses, Auth aliaslar
+- Narx tarixi (`product_price_history`), 6 ta yangi web sahifa (`app_v5.js`),
+  PWA (`manifest.json` + `sw.js`)
+
+### v5.1 — Tranzaksiya kodi + Avans fotosi + Mijoz shifrlash
+- 🔖 Har bir sotuv/qaytarish/ombor harakatiga **16 xonali tranzaksiya kodi**;
+  `GET /api/documents/lookup?code=...` orqali hujjatni 1 daqiqada topish
+- 📎 Avans hisobotiga bot orqali ixtiyoriy **chek fotosurati** yuklash
+- 🔒 Mijoz telefon/manzilini **rol bo'yicha yashirish** (sotuvchi maskani ko'radi,
+  direktor/haydovchi to'liq)
+
 ### 🐳 v4.x — Docker + CI/CD
 `docker-compose up -d --build` — api (:8000), web (:3000), bot — SQLite, backups,
-logs shared volume'da. `.github/workflows/ci.yml` — har push/PR da: 582+ test,
+logs shared volume'da. `.github/workflows/ci.yml` — har push/PR da: 613+ test,
 Node sintaksis tekshiruvi va Docker build.
 
 ---

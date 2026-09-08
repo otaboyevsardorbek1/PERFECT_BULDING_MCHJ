@@ -842,6 +842,20 @@ GET|POST /api/warehouses · PUT /api/warehouses/{id}
 - `see_cost=False` rollar uchun tannarx maydonlari `CostVisibilityMiddleware` orqali kesiladi (yangi endpointlarda ham).
 - Web UI yangi sahifalari `app_v5.js` da — `app.js`'ga tegmaydi, global `PAGES`/`RENDERERS`'ni kengaytiradi.
 
+## 9. 🔖 v5.1 — Tranzaksiya kodi, avans fotosi, mijoz ma'lumotlari shifrlash
+
+Qayta to'liq auditda (`construction_factory_bot.md` A–H "20+ nozik holat"
+bo'limlari) topilgan qolgan bo'shliqlar yopildi:
+
+| TZ talabi | Amalga oshirish |
+| :--- | :--- |
+| **Tranzaksiya kodi** (A: har bir operatsiyaga unikal 16 xonali kod) | `transaction_code` ustuni (`sales`, `return_acts`, `warehouse_transactions`); YYMMDD+10 raqam; yangi qatorlarda avtomatik, eski DB'ga `upgrade_schema` backfill; bot cheki va qaytarish aktida `🔖 Tranzaksiya` qatori |
+| **Hujjatni kod orqali topish** (A: "soliqchilar tekshiruvida 1 daqiqada") | `GET /api/documents/lookup?code=...` — sotuv/qaytarish/ombor harakati; web POS'da "🔍 Hujjat izlash" kartasi |
+| **Avans hisoboti fotosurati** (A: "fotosurat bilan yuklaydi") | `ExpenseReport.photo_path`; bot avans oqimida ixtiyoriy rasm qadami, direktor `🖼` tugmasi bilan ko'radi |
+| **Mijozlar ma'lumotlari shifrlash** (F: "sotuvchi faqat ism va qarz") | `mask_customer_dict` — direktor/haydovchi to'liq; qolgan rollarga telefon maskalangan (`+998 ** *** ** 45`), manzil/izoh yashirin |
+
+Yangi endpoint: `GET /api/documents/lookup?code=<16 raqam>` — javob: `{found, type: sale|return_act|warehouse_transaction, document}`.
+
 ---
 
 ## 📝 Xulosa

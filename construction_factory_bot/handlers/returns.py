@@ -443,6 +443,7 @@ async def return_confirm(callback: types.CallbackQuery, state: FSMContext):
             parts = [
                 f"📄 <b>QAYTARISH AKTI</b>\n",
                 f"🧾 Akt: {act.act_number}\n",
+                f"🔖 Tranzaksiya: {act.transaction_code}\n",
                 f"📅 Sana: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n",
                 f"🏭 Mahsulot: {html.escape(act.product_name or '')} x {_qty_text(act.quantity)} {act.unit or ''}\n",
                 f"💵 Qiymati: {format_currency(act.total_amount)} so'm\n",

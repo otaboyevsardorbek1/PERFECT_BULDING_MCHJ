@@ -257,6 +257,24 @@ Texnik jihatlar:
   🚚 Yetkazib berish (imzo + GPS), ↩️ Qaytarish, 💵 Smena (kassa), 🛒 Do'kon buyurtmalari.
 - **PWA** (`manifest.json` + `sw.js`): mobil telefonda ilova kabi ishlaydi, offline rejim.
 
+## 🆕 v5.1 — Tranzaksiya kodi, avans fotosi, mijoz ma'lumotlari shifrlash
+
+Qayta to'liq audit (`construction_factory_bot.md` A–H "20+ nozik holat" bo'limlari)da
+topilgan qolgan bo'shliqlar yopildi:
+
+- **🔖 Tranzaksiya kodi** (TZ A-bo'lim): har bir sotuv, qaytarish akti va ombor
+  kirim/chiqimiga unikal **16 xonali kod** (`YYMMDD`+10 raqam) — `sales`,
+  `return_acts`, `warehouse_transactions` jadvallarida. Yangi qatorlarda avtomatik,
+  eski DB'ga `upgrade_schema` backfill qiladi. Bot chekida `🔖 Tranzaksiya:` qatori.
+- **🔎 Hujjat izlash**: `GET /api/documents/lookup?code=<16 raqam>` — soliq
+  tekshiruvida hujjatni 1 daqiqada topish; web POS'da "🔍 Hujjat izlash" kartasi.
+- **📎 Avans hisoboti fotosurati** (TZ A-bo'lim): `ExpenseReport.photo_path`;
+  bot'da ixtiyoriy rasm qadami, direktor "🖼 rasmi" tugmasi bilan chekni ko'radi.
+- **🔒 Mijozlar ma'lumotlari shifrlash** (TZ F-bo'lim): server tomonda
+  `mask_customer_dict` — direktor/haydovchi to'liq telefon/manzilni ko'radi,
+  sotuvchi va boshqa rollarga telefon maskalanadi (`+998 ** *** ** 45`),
+  manzil/izoh yashiriladi.
+
 ## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
 
 ```bash

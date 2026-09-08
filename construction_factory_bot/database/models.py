@@ -10,6 +10,7 @@ import enum
 import logging
 
 from config import DATABASE_URL
+from utils.transaction_codes import make_transaction_code
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,9 @@ class WarehouseTransaction(Base):
     source_warehouse = Column(String(50), nullable=True)  # kochirishda: qayerdan
     target_warehouse = Column(String(50), nullable=True)  # kochirishda: qayerga
     notes = Column(Text, nullable=True)
+    # TZ: "Tranzaksiya kodi" — har bir kirim/chiqimga unikal 16 xonali kod
+    transaction_code = Column(String(16), unique=True, index=True,
+                              default=make_transaction_code)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Aloqalar
@@ -403,6 +407,9 @@ class Sale(Base):
     status = Column(String(20), default="completed")
     sale_date = Column(DateTime, default=datetime.utcnow)
     notes = Column(Text, nullable=True)
+    # TZ: "Tranzaksiya kodi" — har bir sotuvga unikal 16 xonali kod
+    transaction_code = Column(String(16), unique=True, index=True,
+                              default=make_transaction_code)
     user_id = Column(Integer, nullable=True, index=True)   # sotuvchi (telegram/web) id
     user_name = Column(String(100), nullable=True)          # sotuvchi ismi (reyting uchun)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -523,6 +530,9 @@ class ReturnAct(Base):
     warehouse = Column(String(50), default="tayyor")  # qaytgan tovar ombori
     status = Column(String(20), default="completed")  # completed | rejected | cancelled
     note = Column(Text, nullable=True)
+    # TZ: "Tranzaksiya kodi" — qaytarish aktiga ham unikal 16 xonali kod
+    transaction_code = Column(String(16), unique=True, index=True,
+                              default=make_transaction_code)
     created_by = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -912,6 +922,7 @@ class ExpenseReport(Base):
     category = Column(String(30), default="boshqa")  # yoqilgi | yol_hagi | ovqat | benzin | boshqa
     amount = Column(Float, nullable=False)
     description = Column(Text, nullable=True)
+    photo_path = Column(String(255), nullable=True)  # chek/xarajat fotosurati (TZ: Avans hisoboti)
     status = Column(String(20), default="kutilmoqda")  # kutilmoqda | tasdiqlangan | rad_etilgan
     reviewed_by = Column(String(100), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
@@ -1034,6 +1045,7 @@ EXTRA_COLUMNS = {
     "warehouse_transactions": [
         ("source_warehouse", "VARCHAR(50)"),
         ("target_warehouse", "VARCHAR(50)"),
+        ("transaction_code", "VARCHAR(16)"),
     ],
     "employees": [
         ("role", "VARCHAR(30)"),
@@ -1066,6 +1078,7 @@ EXTRA_COLUMNS = {
         ("sale_type", "VARCHAR(20)"),
         ("returned_qty", "FLOAT"),
         ("returned_amount", "FLOAT"),
+        ("transaction_code", "VARCHAR(16)"),
     ],
     "payment_invoices": [
         ("shop_order_id", "INTEGER"),
@@ -1080,6 +1093,12 @@ EXTRA_COLUMNS = {
         ("online_amount", "FLOAT"),
         ("cash_amount", "FLOAT"),
         ("online_gateway", "VARCHAR(10)"),
+    ],
+    "return_acts": [
+        ("transaction_code", "VARCHAR(16)"),
+    ],
+    "expense_reports": [
+        ("photo_path", "VARCHAR(255)"),
     ],
 }
 
@@ -1111,6 +1130,22 @@ def upgrade_schema(bind=None):
                             f'ALTER TABLE "{table_name}" ADD COLUMN {col_name} {col_type}'
                         ))
                         logger.info(f"Migratsiya: {table_name}.{col_name} qo'shildi")
+
+        # 3) Eski qatorlarga tranzaksiya kodini orqaga to'ldirish (backfill)
+        with target.begin() as conn:
+            for table_name in ("sales", "return_acts", "warehouse_transactions"):
+                if table_name not in inspector.get_table_names():
+                    continue
+                rows = conn.execute(text(
+                    f'SELECT id FROM "{table_name}" WHERE transaction_code IS NULL'
+                )).fetchall()
+                for (row_id,) in rows:
+                    conn.execute(text(
+                        f'UPDATE "{table_name}" SET transaction_code = '
+                        f':code WHERE id = :id'
+                    ), {"code": make_transaction_code(), "id": row_id})
+                if rows:
+                    logger.info(f"Backfill: {table_name} — {len(rows)} ta tranzaksiya kodi")
     except Exception as e:
         logger.error(f"Schema migratsiyada xatolik: {e}")
 

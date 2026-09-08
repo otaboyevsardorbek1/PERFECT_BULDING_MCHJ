@@ -468,6 +468,37 @@ def strip_cost_fields(data, user: AuthUser) -> Any:
     return data
 
 
+# =============== MIJOZ MA'LUMOTLARINI ROL BO'YICHA YASHIRISH ===============
+# TZ (F-bo'lim "Mijozlar ma'lumotlari shifrlash"):
+#   "Oddiy sotuvchi faqat mijozning ismi va qarzini ko'ra oladi, telefoni va
+#    manzili faqat haydovchi va direktorda."
+# Direktor va haydovchi to'liq ko'radi; qolgan rollar uchun telefon
+# maskalanadi, manzil va izoh yashiriladi (server tomonda).
+CUSTOMER_FULL_ACCESS_ROLES = frozenset({"direktor", "haydovchi"})
+
+
+def mask_customer_dict(customer: dict, user: AuthUser) -> dict:
+    """Mijoz dict'ini roli bo'yicha filtrlaydi (TZ F.4)."""
+    if not customer:
+        return customer
+    if getattr(user, "role", None) in CUSTOMER_FULL_ACCESS_ROLES:
+        return customer
+    masked = dict(customer)
+    phone = masked.get("phone")
+    if phone:
+        phone = str(phone)
+        if len(phone) >= 7:
+            masked["phone"] = f"{phone[:4]} ** *** {phone[-2:]}"
+        else:
+            masked["phone"] = "** *** **"
+    else:
+        masked["phone"] = None
+    masked["address"] = None
+    masked["notes"] = None
+    masked["phone_masked"] = True
+    return masked
+
+
 def _unauthorized(detail: str = "Avtorizatsiya talab qilinadi (token yo'q yoki yaroqsiz)"):
     return HTTPException(status_code=401, detail=detail)
 

@@ -788,6 +788,7 @@ async def confirm_sale(callback: CallbackQuery, state: FSMContext):
             receipt_text = (
                 f"🧾 <b>CHEK</b>\n\n"
                 f"📋 Invoice: {sale.invoice_number}\n"
+                f"🔖 Tranzaksiya: {sale.transaction_code}\n"
                 f"📅 Sana: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
                 f"🏭 Mahsulot: {data['product_name']}\n"
                 f"📦 Miqdor: {data['quantity']} {data['product_unit']}\n"
