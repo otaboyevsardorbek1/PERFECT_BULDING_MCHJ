@@ -1,3 +1,449 @@
+# 🏗️ QURILISH MATERIALLARI SAVDO VA ISHLAB CHIQARISH UCHUN YAGONA TIZIM – TO‘LIQ TEXNIK TOPSHIRIQ (v.5.0 – ENTERPRISE READY)
+
+---
+
+## 📌 1. LOYIHANING MAQSADI VA QAMROVI
+
+Ushbu loyiha qurilish materiallari ishlab chiqarish, ulgurji va chakana savdo, omborxona hisobi, logistika, moliya va mijozlar bilan ishlashni yagona platformaga birlashtiradigan **to‘liq avtomatlashtirilgan korporativ tizim**ni yaratishga qaratilgan.
+
+Tizim quyidagi **asosiy vazifalarni** hal qiladi:
+
+- Xomashyo qabul qilishdan tortib, tayyor mahsulotni mijozga yetkazib berishgacha bo‘lgan butun zanjirni raqamlashtirish;
+- Barcha jarayonlarni real vaqt rejimida kuzatish va boshqarish;
+- Xodimlar, mijozlar va yetkazib beruvchilar o‘rtasida samarali hamkorlikni yo‘lga qo‘yish;
+- Moliyaviy va soliq hisobotlarini avtomatik shakllantirish;
+- AI, IoT, Service Mesh, Zero Trust, Event Sourcing kabi zamonaviy texnologiyalar yordamida tizimni **intellektual, xavfsiz va o‘ta ishonchli** qilish.
+
+Tizim **mahsulotga tayyor (product-ready)** va **enterprise darajasidagi platforma** sifatida ishlab chiqiladi. U quyidagi tamoyillarga asoslanadi:
+
+- **API-first** – barcha funksiyalar REST/GraphQL va WebSocket orqali ishlaydi;
+- **Cloud-native** – konteynerlashtirilgan, Kubernetes asosida ishlaydi;
+- **Security-first** – Zero Trust, mTLS, OPA, 2FA, audit log;
+- **Observability-first** – Prometheus, Grafana, Loki, Jaeger, Kiali;
+- **GitOps** – barcha konfiguratsiyalar kod sifatida boshqariladi (ArgoCD, Helm, Terraform).
+
+---
+
+## 🧱 2. TIZIM ARXITEKTURASINING UMUMIY SXEMASI
+
+Tizim **mikrosxizmatlar** asosida quriladi va quyidagi asosiy qatlamlardan iborat:
+
+| Qatlam | Tavsifi | Texnologiyalar |
+| :--- | :--- | :--- |
+| **Frontend Web** | Mijozlar, sotuvchilar, kassir, omborchi, haydovchi va direktor uchun veb-interfeys | React.js / Vue.js (TypeScript) |
+| **Frontend Mobile** | Haydovchi, omborchi, yuklovchi va sotuvchi uchun mobil ilovalar | React Native (TypeScript) |
+| **POS (Kassa)** | Offline rejimda ishlaydigan kassa dasturi | Electron + React (lokal SQLite) |
+| **API Gateway** | Barcha so‘rovlarni marshrutlash, rate limiting, autentifikatsiya | Kong / Traefik / Nginx |
+| **Backend Mikrosxizmatlar** | Har bir biznes modul uchun alohida xizmat (Product, Order, Inventory, Delivery, Finance, CRM, Production, AI, IoT va h.k.) | Node.js (NestJS) / Python (FastAPI) |
+| **Event Broker** | Voqealarga asoslangan arxitektura (Event Sourcing) uchun | Apache Kafka / RabbitMQ |
+| **Maʼlumotlar omborlari** | Asosiy maʼlumotlar, kesh, qidiruv, vaqtli seriyalar | PostgreSQL, Redis, Elasticsearch, TimescaleDB |
+| **Service Mesh** | Xizmatlararo aloqani boshqarish, xavfsizlik va kuzatuv | Istio (Envoy proxy) |
+| **Monitoring & Observability** | Metrikalar, loglar, distributed tracing | Prometheus, Grafana, Loki, Tempo, Jaeger, Kiali |
+| **CI/CD & GitOps** | Avtomatik test, build va deploy | GitHub Actions, ArgoCD, Helm, Terraform |
+| **Xavfsizlik** | Siyosat boshqaruvi, autentifikatsiya, shifrlash | OPA/Gatekeeper, JWT, 2FA, Vault, mTLS |
+| **Disaster Recovery** | Zaxiralash va tez tiklash | Cross-region S3, Velero, RDS Multi-AZ |
+
+---
+
+## 📦 3. FUNKSIONAL MODULLAR (BATAFSIL)
+
+Quyida barcha funksional modullar, ularning imkoniyatlari va qo‘shimcha innovatsion xususiyatlari keltirilgan.
+
+---
+
+### 3.1. Mahsulot katalogi va konvertatsiya
+
+**Vazifasi:** Barcha mahsulotlarni (xomashyo, yarim tayyor, tayyor) yagona katalogda saqlash, ularni turli o‘lchov birliklarida (dona, kg, m², m³, pallet, litr) ifodalash va avtomatik konvertatsiya qilish.
+
+**Asosiy funksiyalar:**
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Ko‘p o‘lchovli birliklar | Bitta mahsulot uchun bir nechta o‘lchov birliklari va ular orasidagi konversiya koeffitsiyentlari |
+| Dinamik narxlar | Ulgurji, chakana, maxsus mijoz narxlari; vaqtga qarab o‘zgaruvchi narxlar |
+| Partiya va seriya | Har bir partiya uchun ishlab chiqarilgan sana, amal qilish muddati, sertifikat raqami |
+| Saqlash shartlari | Namlik, harorat, yonuvchanlik, maxsus talablar |
+| Minimal zaxira | Har bir mahsulot uchun minimal qoldiq chegarasi – tizim avtomatik buyurtma yuboradi |
+| Full-text qidiruv | Mahsulot nomi, tavsifi, teglari bo‘yicha tezkor qidiruv (Elasticsearch) |
+| **AI tavsiyalar** | Mijozning xarid tarixiga asoslanib, unga mos mahsulotlarni tavsiya qilish |
+| **Dinamik narxlash** | Ombordagi qoldiq va talabga qarab narxni avtomatik moslash (direktor tasdig‘i bilan) |
+
+---
+
+### 3.2. Ta’minot va qabul qilish (yetkazib beruvchi + omborchi)
+
+**Vazifasi:** Xomashyo va tayyor mahsulotlarni qabul qilish, sifat nazorati, nomuvofiqliklarni qayd etish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Sifat nazorati akti | Omborchi planshetdan mahsulotni tortadi, fotosurat ilova qiladi, sifat sertifikatini tekshiradi |
+| Avtomatik qaytarish schyot-fakturasi | Agar farq yoki sifatsizlik bo‘lsa, yetkazib beruvchiga qaytarish hujjati avtomatik yaratiladi |
+| Yetkazib berish oynasi | Qabul qilingan yukni ombor xaritasidagi aniq sektor (masalan, A1-2-3) ga joylashtirish |
+| Partiya va seriya raqamlari | Har bir kirimga unikal partiya raqami beriladi |
+| **Weight Bridge (vaznli tarozi) integratsiyasi** | Avtomatik vazn o‘lchash, tizimga yozish |
+| **RFID/QR kod skanerlash** | Masofadan skanerlash va inventarizatsiya |
+
+---
+
+### 3.3. Real vaqtda sotuv (sotuvchi + kassir)
+
+**Vazifasi:** Mijozlarga mahsulot sotish, rezervatsiya, to‘lov, nasiya va smena boshqaruvi.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Rezervatsiya | Mahsulotni 2–24 soatga bloklash, to‘lov amalga oshmasa avtomatik yechish |
+| Aralash to‘lov | Naqd, karta, Payme/Click, bank o‘tkazmasi, nasiya – bir chekda birlashtirish |
+| Nasiya (kredit) | Mijozning kredit limiti, garov, 30/60 kun muddat, kechikishda SMS eslatma |
+| Chegirma turlari | Avtomatik (aksiya), karta (bonus), direktor ruxsati (maxsus) |
+| Smena yopish | Kassadagi pul va elektron to‘lovlarni avtomatik solishtirish, farq hisoboti |
+| **O‘xshash mahsulot taklifi** | Sotuv vaqtida “Bu mahsulotga mos keladi” degan tavsiyalar berish (AI) |
+| **Mijoz triaji** | Mijozni oltin/kumush/bronza toifasiga ajratish, har biriga mos xizmat ko‘rsatish |
+
+---
+
+### 3.4. Ombor komplektatsiyasi va yuklash (omborchi + yuklovchi)
+
+**Vazifasi:** Buyurtmalarni ombordan yig‘ish, to‘g‘ri joylashtirish, ortish va jo‘natish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Yig‘ish varaqasi (Picking list) | Eng qisqa marshrut bo‘yicha mahsulotlarni yig‘ish; skanerlaganda to‘g‘ri/xato signali |
+| Ortish sxemasi | Og‘ir mahsulotlar pastga, yengillari tepaga joylashtirish chizmasi |
+| Jo‘natish holati | Yuk ortib bo‘lgach, “Jo‘natildi” deb belgilash; mijozga SMS/Telegram xabar |
+| **Sinish akti** | Yuklashda sinib qolgan mahsulotlar uchun brak omboriga o‘tkazish va dalolatnoma |
+
+---
+
+### 3.5. Yetkazib berish logistikasi (haydovchi/ekspeditor)
+
+**Vazifasi:** Buyurtmalarni mijozlarga yetkazib berish, marshrutlash, jonli kuzatuv.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Marshrutlashtirish paneli | Haydovchi o‘z ilovasida buyurtmalar ro‘yxati va manzillarni ko‘radi |
+| GPS trekking | Mijoz veb-sahifada yukning jonli lokatsiyasini kuzatadi |
+| Yo‘nalish optimizatori | Tirbandlik va ob-havo hisobga olingan holda eng qisqa/tez yo‘lni taklif qiladi |
+| Yoqilg‘i nazorati | 1 km ga qancha yoqilg‘i sarflangani hisoblanadi, me’yordan oshsa direktor xabari |
+| **Yetkazib berish vaqtini bashorat qilish (AI)** | Real vaqt maʼlumotlari asosida aniq ETA (taxminiy yetib kelish vaqti) hisoblash |
+| **Avtotransport holati** | Haydovchi haydash uslubi, dvigatel xatolari haqida maʼlumot yig‘ish (OBD-II) |
+
+---
+
+### 3.6. Mijozlar bazasi va CRM
+
+**Vazifasi:** Mijozlar bilan munosabatlarni boshqarish, sodiqlik dasturlari, maxsus narxlar.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Mijoz kartasi | To‘liq xarid tarixi, qarzi, kelishilgan narxlar, aloqa maʼlumotlari |
+| Sodiqlik bonusi | Har 10 mln xaridga 1% keshbek yoki bonus ball |
+| Avtomatik SMS/Telegram | Qarz eslatmasi, yetkazib berish holati, aksiya xabarlari |
+| **AI asosida segmentatsiya** | Mijozlarni klasterlash, har bir guruh uchun maxsus marketing strategiyasi |
+| **Xarid ehtimolini prognozlash** | Qaysi mahsulotga, qachon va qancha xarid qilishini oldindan aytish |
+| **Avtomatik chat-bot (AI)** | 24/7 ishlaydigan chatbot orqali savollarga javob berish va oddiy buyurtmalarni qabul qilish |
+
+---
+
+### 3.7. Moliyaviy hisobot va direktor paneli
+
+**Vazifasi:** Korxonaning moliyaviy holatini real vaqtda ko‘rsatish, hisobotlar generatsiyasi.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Jonli P&L (Foyda/Zarar) | Darhol daromad va xarajatlarni ko‘rsatadi |
+| Inventarizatsiya varaqasi | Omborchi sanaydi, tizim bilan solishtiradi, farq bo‘lsa dalolatnoma |
+| Soliq hisoboti | QQS, aylanma soliq, ijtimoiy soliq avtomatik hisoblanadi va soliq organlariga yuboriladi |
+| Eksport (Excel/PDF/1C) | Barcha hisobotlar bir tugma bilan eksport qilinadi |
+| **Moliyaviy prognoz** | Tarixiy maʼlumotlar asosida kelgusi oy/yil uchun daromad, xarajat va foyda prognozi (AI) |
+| **Xarajatlarni avtomatik taqsimlash** | Har bir xarajat (ish haqi, elektr, transport) mahsulot yoki bo‘lim bo‘yicha taqsimlanadi |
+| **Avtomatik soliq deklaratsiyasi** | Davlat soliq xizmatiga elektron shaklda yuborish |
+
+---
+
+### 3.8. Ishlab chiqarish moduli (zavod/sex) – kengaytirilgan
+
+**Vazifasi:** Xomashyodan tayyor mahsulot ishlab chiqarish jarayonini boshqarish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Xomashyo kirimi | Sertifikat, partiya raqami, saqlash shartlari |
+| Resept (BOM) | Mahsulot tarkibidagi xomashyo miqdorini avtomatik hisoblash |
+| Ishlab chiqarish buyrug‘i | Direktor buyrug‘i bo‘yicha tizim kerakli xomashyoni hisoblaydi |
+| Brak va chiqindi | Brak mahsulotlar alohida omborga joylanadi, qayta ishlash imkoniyati |
+| Texnologik karta | Har bir operatsiya vaqti, harorati, boshqa parametrlari yoziladi |
+| Sifat nazorati | Tayyor mahsulot sinovdan o‘tkaziladi, natija dalolatnomaga yoziladi |
+| **Texnologik jarayonlarni optimallashtirish (AI)** | Optimal harorat, vaqt, bosim parametrlarini topish |
+| **Uskunalar holatini bashoratli ta’mirlash (Predictive Maintenance)** | Sensorlar maʼlumotlari asosida uskuna ishdan chiqishini oldindan aytish |
+| **Ishlab chiqarish chiqindilarini kamaytirish** | Xomashyo iste’moli va chiqindi tahlillari asosida tejamkorlik choralari |
+
+---
+
+### 3.9. AI/ML moduli (intellektual yechimlar)
+
+**Vazifasi:** Tizimni aqlli va o‘z-o‘zini o‘rganuvchi qilish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| **Mahsulot tavsiyalari** | Mijozning xarid tarixi va shunga o‘xshash mijozlar asosida mahsulot taklif qilish |
+| **Xarid ehtimoli prognozi** | Qaysi mijoz qachon va qancha xarid qilishini bashorat qilish |
+| **Mijoz segmentatsiyasi** | Klasterlash algoritmlari yordamida mijozlarni guruhlarga ajratish |
+| **Dinamik narxlash** | Talab, mavsum, ombor qoldig‘iga qarab narxlarni optimallashtirish |
+| **AI chatbot** | 24/7 ishlaydigan va mijoz savollariga javob beradigan bot |
+| **Yetkazib berish ETA** | Yo‘l tirbandliklari, ob-havo, haydovchi tajribasini hisobga olgan holda aniq vaqtni hisoblash |
+| **Sotuv prognozi** | Keyingi hafta/oy uchun sotuv hajmini oldindan aytish (inventarizatsiya rejalashtirish uchun) |
+
+---
+
+### 3.10. IoT va sensorlar integratsiyasi
+
+**Vazifasi:** Ombor va ishlab chiqarish sharoitlarini real vaqtda kuzatish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Harorat/namlik sensorlari | Saqlash shartlari buzilsa ogohlantirish |
+| Vaznli tarozi (Weight Bridge) | Avtomatik vazn o‘lchash va tizimga yozish |
+| RFID skanerlar | Masofadan mahsulotlarni identifikatsiya qilish |
+| **AGV/AMR robotlar** (ixtiyoriy) | Yuklarni avtomatik ko‘chirish va joylashtirish |
+| **Dronlar yordamida inventarizatsiya** | Katta omborlarda dronlar yordamida tezkor sanash |
+
+---
+
+### 3.11. Event Sourcing va CQRS
+
+**Vazifasi:** Barcha harakatlarni voqealar (events) sifatida saqlash, tizim holatini qayta tiklash va audit qilish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Voqealarni saqlash | Har bir operatsiya (buyurtma, to‘lov, kirim, chiqim) event sifatida Kafka/PostgreSQL da saqlanadi |
+| Holatni qayta tiklash | Istalgan vaqtga tizim holatini tiklash imkoniyati |
+| Audit log | Kim, qachon, nima qilgani to‘liq yoziladi |
+| **CQRS** | Yozish va o‘qish maʼlumotlar bazalarini ajratish, yuqori samaradorlik |
+
+---
+
+### 3.12. Feature Flags (xususiyatlarni boshqarish)
+
+**Vazifasi:** Yangi funksiyalarni xavfsiz sinovdan o‘tkazish va bosqichma-bosqich ishga tushirish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Flag yaratish | Har bir yangi xususiyat uchun flag (yoqish/o‘chirish) |
+| Foiz bo‘yicha tarqatish | Xususiyatni faqat 10% foydalanuvchilarga ko‘rsatish |
+| A/B test | Turli xil versiyalarni sinovdan o‘tkazish |
+| Avtomatik o‘chirish | Xato yuz bersa, xususiyatni avtomatik o‘chirish |
+
+---
+
+### 3.13. ChatOps va DevOps avtomatizatsiyasi
+
+**Vazifasi:** Slack/Telegram orqali tizimni boshqarish va ogohlantirishlar olish.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| `/deploy qurilish prod` | Telegram/Slack dan deploy qilish |
+| `/status backend` | Xizmat holatini ko‘rish |
+| `/logs order-service` | Xizmat loglarini olish |
+| `/rollback qurilish 3` | Avvalgi versiyaga qaytish |
+| `/alert` | Kritik ogohlantirishlarni chat kanaliga yuborish |
+
+---
+
+### 3.14. Service Level Objectives (SLO) va Chaos Engineering
+
+**Vazifasi:** Tizimning ishonchlilik darajasini aniqlash va xatolarga chidamliligini sinash.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| SLO | API latensiyasi, xatolik foizi, uptime maqsadlari |
+| SLI | Haqiqiy ko‘rsatkichlarni o‘lchash |
+| Chaos Engineering | Pod o‘chirish, tarmoq kechikishlari, DB failover – rejali ravishda sinovlar o‘tkazish |
+
+---
+
+### 3.15. Multi-Cloud va gibrid arxitektura
+
+**Vazifasi:** Tizimni bir nechta bulut provayderlarida (AWS, GCP, Azure) yoki on-premise da ishga tushirish imkoniyati.
+
+| Funksiya | Tavsifi |
+| :--- | :--- |
+| Infratuzilma kodi | Terraform yordamida barcha resurslar kod sifatida |
+| Cross-region DR | Asosiy va zaxira hududlar |
+| VPC peering / VPN | Xavfsiz ulanish |
+| **Failover** | Asosiy provayder ishdan chiqsa, avtomatik ikkinchisiga o‘tish |
+
+---
+
+## 🔒 4. NO-FUNKSIONAL TALABLAR
+
+| Talab | Mezon | Texnik yechim |
+| :--- | :--- | :--- |
+| **Ishonchlilik** | Uptime ≥ 99.99% | Kubernetes, Multi-AZ, self-healing, HPA |
+| **Unumdorlik** | API javob vaqti p95 < 200 ms, 1000+ so‘rov/sek | Redis kesh, Elasticsearch, load balancing |
+| **Miqyoslanish** | Vertikal va gorizontal skeyling | HPA, Cluster Autoscaler, read replicas |
+| **Xavfsizlik** | Zero Trust, mTLS, OPA, 2FA, shifrlash | Istio, Vault, JWT, AES-256 |
+| **Kuzatuvchanlik** | Metrikalar, loglar, tracing | Prometheus, Grafana, Loki, Jaeger |
+| **Maʼlumotlar yaxlitligi** | ACID, audit log, Event Sourcing | PostgreSQL, Kafka |
+| **Backup va DR** | RPO ≤ 1 soat, RTO ≤ 4 soat | Cross-region S3, Velero, RDS Multi-AZ |
+| **Xavfsizlik standartlari** | PCI DSS, GDPR, O‘zbekiston soliq qonunchiligi | Shifrlash, audit log, maxsus ruxsatlar |
+
+---
+
+## 🛠️ 5. TEXNOLOGIK STACK (YANGILANGAN)
+
+| Qatlam | Texnologiya | Sabab |
+| :--- | :--- | :--- |
+| **Backend** | Node.js (NestJS) / Python (FastAPI) | Yuqori unumdorlik, keng ekotizim |
+| **Frontend Web** | React.js (TypeScript) | Tez va interaktiv UI |
+| **Mobile** | React Native (TypeScript) | Kodni qayta ishlatish, tez rivojlantirish |
+| **API Gateway** | Kong / Traefik | Kengaytirilgan marshrutlash, rate limiting |
+| **Database** | PostgreSQL (asosiy), TimescaleDB (vaqtli), Elasticsearch (qidiruv) | Ishonchlilik, murakkab so‘rovlar |
+| **Cache / Session** | Redis | Tez kesh, sessiya saqlash |
+| **Event Broker** | Apache Kafka | Event Sourcing, yuqori o‘tkazuvchanlik |
+| **Service Mesh** | Istio (Envoy) | mTLS, traffic management, observability |
+| **Orchestration** | Kubernetes (EKS/GKE/AKS) | Konteynerlarni boshqarish |
+| **Infrastructure as Code** | Terraform | Bulut resurslarini kod sifatida boshqarish |
+| **CI/CD** | GitHub Actions + ArgoCD | Avtomatik test, build, deploy |
+| **Helm** | Paket boshqaruvi | K8s resurslarini versiyalash |
+| **Monitoring** | Prometheus, Grafana, Loki, Tempo | Metrikalar, loglar, tracing |
+| **Security** | OPA/Gatekeeper, HashiCorp Vault | Siyosat boshqaruvi, maxfiylik |
+| **DR & Backup** | Velero, AWS S3 cross-region | Zaxiralash va tez tiklash |
+| **AI/ML** | Python (scikit-learn, TensorFlow), MLflow | Modellarni o‘qitish va boshqarish |
+| **IoT** | MQTT broker, Node-RED | Sensor maʼlumotlarini qabul qilish |
+
+---
+
+## 🚀 6. INFRATUZILMA VA DEVOPS
+
+### 6.1. GitOps (ArgoCD)
+- Barcha konfiguratsiyalar git repository da saqlanadi.
+- Har bir muhit (dev, staging, prod, dr) uchun alohida branch yoki folder.
+- Avtomatik sinxronizatsiya – repo ga push qilgan zahoti ArgoCD o‘zgarishlarni qo‘llaydi.
+
+### 6.2. CI/CD pipeline (GitHub Actions)
+- **Test**: Unit testlar, lint, security scan (Trivy, Snyk)
+- **Build**: Docker image yaratish va registry ga yuklash
+- **Deploy**: ArgoCD orqali yoki SSH yordamida serverga yuklash
+- **Rollback**: Avtomatik yoki manual (Git revert orqali)
+
+### 6.3. Monitoring va Alerting
+- Prometheus metrikalarni yig‘adi.
+- Grafana dashboardlar (tayyor + moslashtirilgan).
+- Alertmanager ogohlantirishlarni Slack/Telegram/Email ga yuboradi.
+- Loki loglarni yig‘adi, Grafana da ko‘rsatadi.
+- Jaeger distributed tracing.
+
+---
+
+## 🛡️ 7. XAVFSIZLIK (ZERO TRUST, MTLS, OPA, JWT, 2FA, AUDIT LOG)
+
+| Komponent | Tavsifi |
+| :--- | :--- |
+| **Zero Trust Network Access** | Har bir so‘rov autentifikatsiya va avtorizatsiyadan o‘tadi |
+| **mTLS** | Xizmatlararo aloqalar shifrlangan va sertifikat asosida tasdiqlanadi |
+| **OPA/Gatekeeper** | Kubernetes resurslari uchun siyosatlar (masalan, majburiy label, ruxsat etilgan registrlar) |
+| **JWT + Refresh token** | Access token 1 soat, refresh token 7 kun, blacklist (Redis) |
+| **2FA (Google Authenticator)** | Direktor va kassir uchun majburiy |
+| **Audit log** | Har bir amal (kim, qachon, IP, user-agent) saqlanadi, o‘chirilmaydi |
+| **Maʼlumotlar shifrlash** | AES-256 bilan mijoz telefon raqamlari, manzillari shifrlanadi |
+| **CSRF, XSS, SQL injection himoyasi** | Standard web xavfsizlik choralari |
+
+---
+
+## 📊 8. MONITORING VA OBSERVABILITY
+
+| Instrument | Vazifasi |
+| :--- | :--- |
+| **Prometheus** | Metrikalarni yig‘ish (CPU, memory, HTTP so‘rovlar, biznes metrikalar) |
+| **Grafana** | Dashboardlar (infratuzilma, ilova, biznes, DR) |
+| **Loki** | Loglarni markazlashtirilgan holda yig‘ish va qidirish |
+| **Tempo / Jaeger** | Distributed tracing – so‘rovlarni kuzatish |
+| **Kiali** | Istio xizmatlar topologiyasi va trafikni vizualizatsiya qilish |
+| **Sentry** | Xatolarni real vaqtda qayd qilish va tahlil qilish |
+
+---
+
+## 🛡️ 9. DISASTER RECOVERY VA BUSINESS CONTINUITY
+
+| Talab | Yechim |
+| :--- | :--- |
+| **RPO (Recovery Point Objective)** | ≤ 1 soat – har 6 soatda to‘liq backup, har 15 daqiqada WAL shipping |
+| **RTO (Recovery Time Objective)** | ≤ 4 soat – avtomatlashtirilgan tiklash skriptlari |
+| **Backup strategiyasi** | PostgreSQL: daily full backup + WAL archiving to S3 (cross-region). Redis: RDB snapshots. K8s: Velero (etcd, PV). |
+| **Failover** | RDS Multi-AZ, ElastiCache Multi-AZ, EKS multiple node groups |
+| **DR test** | Har oyda chaos testing (pod kill, network delay, DB failover) |
+| **DR runbook** | Batafsil qo‘llanma va avtomatlashtirilgan recovery Job (K8s Job) |
+
+---
+
+## 💰 10. XARAJATLARNI OPTIMALLASHTIRISH (COST OPTIMIZATION)
+
+| Strategiya | Tejamkorlik | Tavsifi |
+| :--- | :--- | :--- |
+| **Pod Rightsizing** | 20-40% | VPA tavsiyalari asosida CPU/memory so‘rovlarini moslash |
+| **Spot Instances** | 60-70% | Stateless mikrosxizmatlar (CI/CD, batch) uchun spot node’lar |
+| **Reserved Instances / Savings Plans** | 20-40% | Barqaror yuklama uchun 1-3 yillik rezervatsiya |
+| **Idle/Orphaned resurslarni tozalash** | 5-15% | Ishlatilmayotgan EBS, ELB, snapshots, Container Registry eski image’lar |
+| **HPA/CA optimallashtirish** | 5-15% | HPA minimumlarini audit qilish, cluster autoscaler sozlamalari |
+| **Cost Visibility** | – | Kubecost/OpenCost yordamida har bir jamoa/mahsulot bo‘yicha xarajatlar hisoboti |
+
+---
+
+## 📅 11. LOYIHANI BOSHQARISH (BOSQICHLAR, VAQT, BYUDJET, RESURSLAR)
+
+| Bosqich | Davomiyligi | Asosiy vazifalar | Xodimlar |
+| :--- | :--- | :--- | :--- |
+| **0. Tayyorgarlik** | 2 hafta | TZ ni tasdiqlash, jamoani yig‘ish, infratuzilmani rejalashtirish | PM, BA, DevOps |
+| **1. MVP (Asosiy trio)** | 1 oy | Kassa + Ombor + Mahsulot katalogi; asosiy API va database | 3-4 dasturchi |
+| **2. Ishlab chiqarish + Hisobot** | 1 oy | Ishlab chiqarish moduli, xomashyo hisobi, kunlik/oylik hisobotlar | 4-5 dasturchi |
+| **3. CRM + Nasiya + Mobil** | 1 oy | Mijozlar bazasi, sodiqlik, nasiya, mobil ilovalar (omborchi, haydovchi) | 5-6 dasturchi |
+| **4. DevOps & Infratuzilma** | 1 oy | K8s, Istio, OPA, monitoring, CI/CD, DR | 2-3 DevOps |
+| **5. AI/ML va IoT** | 2 oy | Tavsiyalar, prognoz, chatbot, sensor integratsiyasi | 2-3 ML muhandisi |
+| **6. Test va Ishga tushirish** | 1 oy | To‘liq test, xodimlarni o‘qitish, ishga tushirish | Barcha jamoa |
+
+**Jami:** ~7-9 oy, jamoa hajmi 8-10 kishi.
+
+**Byudjet taxminiy:**
+
+| Xarajat | Summa (USD) |
+| :--- | :--- |
+| Dasturchilar (8 kishi × 9 oy) | $120,000 – $160,000 |
+| DevOps muhandislar (2 kishi) | $20,000 – $30,000 |
+| Bulut infratuzilma (AWS/GCP) 1 yil | $20,000 – $30,000 |
+| Litsenziyalar, 3-parti xizmatlar | $5,000 – $10,000 |
+| **Jami** | **~$165,000 – $230,000** |
+
+---
+
+## ⚠️ 12. XATARLAR VA YUMSHATISH
+
+| Xatar | Ehtimol | Ta’sir | Yumshatish |
+| :--- | :--- | :--- | :--- |
+| Dasturchilar yetishmasligi | O‘rta | Yuqori | Tayyor TZ, bosqichma-bosqich ishga olish, outsource qismlar |
+| Byudjet oshib ketishi | O‘rta | O‘rta | MVP dan boshlash, qo‘shimcha funksiyalarni keyin qo‘shish |
+| Mijozlar tizimni qabul qilmasligi | O‘rta | O‘rta | Trening, simulyatsiya, bosqichma-bosqich joriy etish |
+| Texnik qiyinchiliklar (AI, IoT) | O‘rta | O‘rta | Prototiplar, tajribali mutaxassislar |
+| Xavfsizlik buzilishi | Past | Yuqori | Zero Trust, mTLS, OPA, audit log, doimiy skaner |
+
+---
+
+## ✅ 13. XULOSA
+
+Ushbu Texnik Topshiriq (v.5.0) qurilish materiallari sohasida ishlab chiqarish, ombor, savdo, logistika, moliya va mijozlar bilan ishlashni yagona, **intellektual, xavfsiz va ishonchli** platformaga birlashtiradi. 
+
+Tizim quyidagi **innovatsion yechimlar** bilan boyitilgan:
+
+- **AI/ML** – tavsiyalar, prognozlar, chatbot
+- **IoT** – sensorlar, vaznli tarozi, RFID
+- **Event Sourcing** – to‘liq audit, qayta tiklash
+- **Feature Flags** – xususiyatlarni xavfsiz boshqarish
+- **ChatOps** – DevOps avtomatizatsiyasi
+- **SLO & Chaos Engineering** – ishonchlilikni doimiy sinovdan o‘tkazish
+- **Multi-Cloud** – provayder mustaqilligi
+- **Service Mesh (Istio)** – tarmoq boshqaruvi va xavfsizlik
+- **Zero Trust & OPA** – siyosat asosidagi xavfsizlik
+- **Cost Optimization** – xarajatlarni kamaytirish
+
+
 Bu juda keng qamrovli va real hayotiy loyiha. Qurilish materiallari o‘ziga xos: **og‘ir vazn, turli o‘lchov birliklari (dona, kg, m², m³, pallet), mavsumiylik va nasiya savdosi** ko‘p. 
 
 Tizimni **7 ta mustaqil modul** va **rol matritsasi** asosida qurishni taklif qilaman. Mana sizga har bir real holatni qamrab oluvchi batafsil g‘oya:
