@@ -136,9 +136,15 @@ Direktor/kassir va istalgan xodim uchun parol + **6 xonali kod**:
 - 🔒 Mijoz telefon/manzilini **rol bo'yicha yashirish** (sotuvchi maskani ko'radi,
   direktor/haydovchi to'liq)
 
+### v5.2 — Mijoz narxlari + Minimal zaxira + Partiya raqami (spec 3-bo'lim)
+- 💰 **Maxsus mijoz narxlari** (`customer_prices`): `GET/PUT/DELETE
+  /api/customers/{id}/prices`; sotuvda maxsus narx avtomatik qo'llanadi
+- 📉 **Mahsulot `min_stock`** — low-stock hisobotda o'z chegarasi ishlatiladi
+- 🔖 **Partiya/sertifikat/amal muddati** xomashyo qabul aktiga yoziladi
+
 ### 🐳 v4.x — Docker + CI/CD
 `docker-compose up -d --build` — api (:8000), web (:3000), bot — SQLite, backups,
-logs shared volume'da. `.github/workflows/ci.yml` — har push/PR da: 613+ test,
+logs shared volume'da. `.github/workflows/ci.yml` — har push/PR da: 621+ test,
 Node sintaksis tekshiruvi va Docker build.
 
 ---

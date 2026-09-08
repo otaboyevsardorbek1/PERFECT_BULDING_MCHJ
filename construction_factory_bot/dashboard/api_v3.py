@@ -484,6 +484,9 @@ def api_receipts(db: Session = Depends(get_db), limit: int = 100,
             "quality_status": r.quality_status,
             "price_per_unit": r.price_per_unit,
             "deficiency_amount": r.deficiency_amount,
+            "batch_number": r.raw_material.batch_number if r.raw_material else None,
+            "certificate_number": r.raw_material.certificate_number if r.raw_material else None,
+            "expiry_date": r.raw_material.expiry_date.isoformat() if r.raw_material and r.raw_material.expiry_date else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         } for r in receipts]}
     except Exception as e:
@@ -504,6 +507,9 @@ def api_create_receipt(data: dict, db: Session = Depends(get_db),
             price_per_unit=float(data.get("price_per_unit", 0)),
             notes=data.get("notes"),
             created_by=data.get("created_by", "API"),
+            batch_number=data.get("batch_number"),
+            certificate_number=data.get("certificate_number"),
+            expiry_date=data.get("expiry_date"),
         )
         return {"receipt": {
             "id": delivery.id, "act_number": delivery.act_number,

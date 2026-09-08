@@ -258,3 +258,32 @@ berish mumkin.
   (web'da yuklash UI yo'q) — foto oqimi Telegram bot orqali ishlaydi.
 - Bot'dagi sotuvchilar mijoz telefonini ko'rishda davom etadi (mijoz bilan
   bevosita aloqa uchun zarur); shifrlash web/API qatlamida qo'llanadi.
+
+## 11. 🆕 v5.2 — Spec yangi 3-bo'limi: mijoz narxlari, min_stock, partiya
+
+> Remote'da `construction_factory_bot.md` yangilandi (+638 qator): boshida
+> yangi "📦 3. FUNKSIONAL MODULLAR (BATAFSIL)" (3.1–3.15) va oxirida bulut
+> infratuzilmasi (HPA, cost optimization). Yangi bo'lim kod bilan
+> solishtirildi — funksional bo'shliqlar qo'shildi, AI/IoT/cloud qismlari
+> roadmap'ga yozildi.
+
+| TZ talabi (3-bo'lim) | Nima qo'shildi | Qayerda |
+| :--- | :--- | :--- |
+| **Maxsus mijoz narxlari** (3.1) | Yangi `customer_prices` jadvali; `GET/PUT/DELETE /api/customers/{id}/prices`; sotuvda `unit_price` berilmasa maxsus narx avtomatik qo'llanadi | `models`, `crud_v5`, `api_v5` |
+| **Minimal zaxira** (3.1) | `Product.min_stock` ustuni; `product_to_dict`'da ko'rinadi; `GET /api/products/low-stock` har mahsulotning o'z chegarasini ishlatadi | `models`, `api_v5` |
+| **Partiya va sertifikat** (3.2) | `RawMaterial.batch_number/certificate_number/expiry_date`; qabul aktida (`create_supplier_delivery`) avtomatik yoziladi, API javobida va bot aktida ko'rinadi | `models`, `crud`, `api_v3`, `handlers/suppliers.py` |
+
+### 11.1 Natija
+
+- **621 ta test o'tdi** (613 + 8 yangi `tests/test_api/test_v52.py`)
+- Barcha modullar import toza
+- Eski DB avtomatik migratsiya qilinadi (ustunlar + yangi `customer_prices` jadvali)
+
+### 11.2 Roadmap (funksional emas — arxitektura takliflari)
+
+Yangi 3-bo'limning 3.9–3.15 qismlari (AI/ML bashoratlar, IoT sensorlar,
+Event Sourcing/CQRS, Feature Flags, ChatOps, SLO, Multi-Cloud) va oxirgi
+bulut bo'limlari (HPA, Spot/Reserved) — mavjud tizim uchun infratuzilma/
+strategiya tavsiyalari; ular `PROJECT_GUIDE.md` "Kelajak" ro'yxatida saqlanadi.
+Hozirgi tizimda 3.9'ning talab bashorati/narx optimizatsiyasi qismi allaqachon
+`handlers/ai_predict.py` + `utils/ai_prediction.py` orqali mavjud.

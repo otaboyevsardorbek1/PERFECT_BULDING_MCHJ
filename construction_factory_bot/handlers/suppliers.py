@@ -280,7 +280,9 @@ async def receipt_price(message: types.Message, state: FSMContext):
         f"🔍 Sifat: {qtext.get(data['quality'])}\n"
         f"💰 Narx: {price:,.0f} so'm/{material.unit}\n"
         f"⚠️ Kamomad qarzi: {delivery.deficiency_amount:,.0f} so'm\n\n"
-        f"Joriy zaxira: {material.current_stock:,.0f} {material.unit}",
+        + (f"🔖 Partiya: {material.batch_number}\n" if material.batch_number else "")
+        + (f"📜 Sertifikat: {material.certificate_number}\n" if material.certificate_number else "")
+        + f"Joriy zaxira: {material.current_stock:,.0f} {material.unit}",
         reply_markup=get_supplier_menu(), parse_mode="HTML"
     )
 

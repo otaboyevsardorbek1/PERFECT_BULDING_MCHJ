@@ -89,6 +89,10 @@ class RawMaterial(Base):
     warehouse = Column(String(50), default="asosiy")  # asosiy, xomashyo, tayyor, brak
     sector = Column(String(20), nullable=True)  # A1, B2, C3 sektor
     storage_conditions = Column(String(100), nullable=True)  # quruq, salqin, yonuvchan...
+    # TZ (3.1/3.2): Partiya va seriya — ishlab chiqarilgan sana, amal qilish muddati, sertifikat raqami
+    batch_number = Column(String(50), nullable=True, index=True)  # unikal partiya raqami
+    certificate_number = Column(String(50), nullable=True)  # sifat sertifikati raqami
+    expiry_date = Column(DateTime, nullable=True)  # amal qilish muddati
     last_purchase_date = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -116,6 +120,7 @@ class Product(Base):
     is_active = Column(Boolean, default=True)
     wholesale_price = Column(Float, nullable=True)  # ulgurji narx
     retail_price = Column(Float, nullable=True)  # chakana narx
+    min_stock = Column(Float, default=0.0)  # TZ (3.1): minimal qoldiq chegarasi — tizim ogohlantiradi
     warehouse = Column(String(50), default="tayyor")  # qaysi omborda
     sector = Column(String(20), nullable=True)
     storage_conditions = Column(String(100), nullable=True)
@@ -442,6 +447,28 @@ class Customer(Base):
     sales = relationship("Sale", back_populates="customer")
     payments = relationship("Payment", back_populates="customer")
     reservations = relationship("Reservation", back_populates="customer")
+
+
+class CustomerPrice(Base):
+    """Mijoz uchun maxsus narx (TZ 3.1: "maxsus mijoz narxlari")
+
+    Ulgurji/doimiy mijozga alohida kelishilgan narx. Sotuv yaratishda,
+    agar `unit_price` aniq berilmagan bo'lsa, bu narx avtomatik qo'llanadi.
+    """
+    __tablename__ = "customer_prices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    price = Column(Float, nullable=False)  # maxsus birlik narxi (so'm)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("customer_id", "product_id", name="uq_customer_product"),)
+
+    # Aloqalar
+    customer = relationship("Customer")
+    product = relationship("Product")
+
 
 class Payment(Base):
     """To'lovlar jadvali (aralash to'lov, nasiya to'lovi, qarz to'lovi)"""
@@ -1033,6 +1060,9 @@ EXTRA_COLUMNS = {
         ("warehouse", "VARCHAR(50)"),
         ("sector", "VARCHAR(20)"),
         ("storage_conditions", "VARCHAR(100)"),
+        ("batch_number", "VARCHAR(50)"),
+        ("certificate_number", "VARCHAR(50)"),
+        ("expiry_date", "DATETIME"),
     ],
     "products": [
         ("wholesale_price", "FLOAT"),
@@ -1041,6 +1071,7 @@ EXTRA_COLUMNS = {
         ("sector", "VARCHAR(20)"),
         ("storage_conditions", "VARCHAR(100)"),
         ("tags", "VARCHAR(100)"),
+        ("min_stock", "FLOAT"),
     ],
     "warehouse_transactions": [
         ("source_warehouse", "VARCHAR(50)"),

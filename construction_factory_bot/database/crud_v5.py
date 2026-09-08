@@ -384,3 +384,87 @@ def get_sales_by_category(db: Session, days: int = 30) -> List[Dict]:
         "total": round(float(r.total or 0), 0),
         "quantity": round(float(r.qty or 0), 1),
     } for r in rows]
+
+
+# =============== MIJOZ UCHUN MAXSUS NARXLAR (TZ 3.1: "maxsus mijoz narxlari") ===============
+
+def get_customer_prices(db: Session, customer_id: int) -> List[Dict]:
+    """Mijozning maxsus narxlari ro'yxati (mahsulot nomi bilan)."""
+    rows = db.query(models.CustomerPrice).filter(
+        models.CustomerPrice.customer_id == customer_id
+    ).all()
+    return [{
+        "id": cp.id,
+        "customer_id": cp.customer_id,
+        "product_id": cp.product_id,
+        "product_name": cp.product.name if cp.product else None,
+        "unit": cp.product.unit if cp.product else None,
+        "price": cp.price,
+        "created_at": cp.created_at.isoformat() if cp.created_at else None,
+    } for cp in rows]
+
+
+def get_customer_product_price(db: Session, customer_id: int,
+                               product_id: int) -> Optional[float]:
+    """Mijoz uchun shu mahsulot bo'yicha maxsus narx (bo'lmasa None)."""
+    cp = db.query(models.CustomerPrice).filter(
+        models.CustomerPrice.customer_id == customer_id,
+        models.CustomerPrice.product_id == product_id,
+    ).first()
+    return cp.price if cp else None
+
+
+def set_customer_price(db: Session, customer_id: int, product_id: int,
+                       price: float) -> Dict:
+    """Mijoz maxsus narxini o'rnatish (mavjud bo'lsa yangilaydi)."""
+    if price is None or float(price) < 0:
+        raise ValueError("price 0 dan katta yoki teng bo'lishi kerak")
+    cp = db.query(models.CustomerPrice).filter(
+        models.CustomerPrice.customer_id == customer_id,
+        models.CustomerPrice.product_id == product_id,
+    ).first()
+    if cp:
+        cp.price = float(price)
+    else:
+        cp = models.CustomerPrice(
+            customer_id=customer_id, product_id=product_id, price=float(price))
+        db.add(cp)
+    db.commit()
+    db.refresh(cp)
+    return {
+        "id": cp.id, "customer_id": cp.customer_id, "product_id": cp.product_id,
+        "product_name": cp.product.name if cp.product else None,
+        "price": cp.price,
+    }
+
+
+def delete_customer_price(db: Session, customer_id: int, product_id: int) -> bool:
+    """Mijoz maxsus narxini o'chirish."""
+    cp = db.query(models.CustomerPrice).filter(
+        models.CustomerPrice.customer_id == customer_id,
+        models.CustomerPrice.product_id == product_id,
+    ).first()
+    if not cp:
+        return False
+    db.delete(cp)
+    db.commit()
+    return True
+
+
+def list_products_below_min_stock(db: Session) -> List[Dict]:
+    """min_stock chegarasidan past bo'lgan tayyor mahsulotlar (TZ 3.1)."""
+    result = []
+    for p in db.query(models.Product).filter(models.Product.is_active.is_(True)).all():
+        income = db.query(func.coalesce(func.sum(models.WarehouseTransaction.quantity), 0.0)).filter(
+            models.WarehouseTransaction.product_id == p.id,
+            models.WarehouseTransaction.transaction_type == models.TransactionType.INCOME,
+        ).scalar() or 0.0
+        outcome = db.query(func.coalesce(func.sum(models.WarehouseTransaction.quantity), 0.0)).filter(
+            models.WarehouseTransaction.product_id == p.id,
+            models.WarehouseTransaction.transaction_type == models.TransactionType.OUTCOME,
+        ).scalar() or 0.0
+        available = float(income) - float(outcome)
+        if float(p.min_stock or 0) > 0 and available < float(p.min_stock):
+            result.append({"product": p, "available_qty": available,
+                           "min_stock": float(p.min_stock or 0)})
+    return result

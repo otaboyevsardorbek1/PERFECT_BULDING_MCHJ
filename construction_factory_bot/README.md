@@ -275,6 +275,20 @@ topilgan qolgan bo'shliqlar yopildi:
   sotuvchi va boshqa rollarga telefon maskalanadi (`+998 ** *** ** 45`),
   manzil/izoh yashiriladi.
 
+## 🆕 v5.2 — Mijoz narxlari, minimal zaxira, partiya raqami
+
+Spec yangilangan "📦 3. FUNKSIONAL MODULLAR (BATAFSIL)" bo'limi auditidan
+keyin qo'shildi:
+
+- **💰 Maxsus mijoz narxlari** (3.1): `customer_prices` jadvali,
+  `GET/PUT/DELETE /api/customers/{id}/prices`; `POST /api/orders` da maxsus narx
+  avtomatik qo'llanadi (agar `unit_price` berilmagan bo'lsa).
+- **📉 Minimal zaxira** (3.1): `Product.min_stock` — `GET /api/products/low-stock`
+  har mahsulotning o'z chegarasini hisobga oladi.
+- **🔖 Partiya va sertifikat** (3.2): `RawMaterial.batch_number`,
+  `certificate_number`, `expiry_date` — qabul aktida yoziladi, API va bot
+  aktida ko'rinadi.
+
 ## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
 
 ```bash

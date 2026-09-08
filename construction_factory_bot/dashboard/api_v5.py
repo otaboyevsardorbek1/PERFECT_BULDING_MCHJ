@@ -302,6 +302,7 @@ def product_to_dict(p: models.Product) -> dict:
         "selling_price": p.selling_price,
         "wholesale_price": p.wholesale_price,
         "retail_price": p.retail_price,
+        "min_stock": p.min_stock or 0,
         "production_cost": p.production_cost,
         "profit_margin": p.profit_margin,
         "barcode": p.barcode,
@@ -355,11 +356,16 @@ def api_products_search(q: str = Query(..., min_length=1), limit: int = 20,
 def api_products_low_stock(min_stock: Optional[float] = None,
                            db: Session = Depends(get_db),
                            user: AuthUser = Depends(require_role("production"))):
-    """Spec: GET /api/products/low-stock — zaxirasi kam mahsulotlar."""
+    """Spec: GET /api/products/low-stock — zaxirasi kam mahsulotlar.
+
+    `min_stock` parametri berilmasa, har mahsulotning o'z `min_stock`
+    chegarasi ishlatiladi (TZ 3.1 "Minimal zaxira").
+    """
     result = []
     for p in db.query(models.Product).filter(models.Product.is_active.is_(True)).all():
         qty = crud.get_available_product_qty(db, p.id)
-        if qty <= 0 or (min_stock is not None and qty < min_stock):
+        threshold = min_stock if min_stock is not None else float(p.min_stock or 0)
+        if qty <= 0 or (threshold and qty < threshold):
             d = product_to_dict(p)
             d["available_qty"] = qty
             result.append(d)
@@ -645,6 +651,45 @@ def api_customer_orders(customer_id: int, db: Session = Depends(get_db),
     } for s in sales]}
 
 
+# ================= MIJOZ MAXSUS NARXLARI (TZ 3.1: "maxsus mijoz narxlari") =================
+@router.get("/customers/{customer_id}/prices")
+def api_customer_prices(customer_id: int, db: Session = Depends(get_db),
+                        user: AuthUser = Depends(require_role("crm"))):
+    """GET /api/customers/{id}/prices — mijozning maxsus narxlari."""
+    if not crud.get_customer(db, customer_id):
+        raise HTTPException(404, "Mijoz topilmadi")
+    return {"prices": crud_v5.get_customer_prices(db, customer_id)}
+
+
+@router.put("/customers/{customer_id}/prices")
+def api_set_customer_price(customer_id: int, data: dict, db: Session = Depends(get_db),
+                           user: AuthUser = Depends(require_any_edit(["crm", "sales"]))):
+    """PUT /api/customers/{id}/prices — maxsus narx o'rnatish {product_id, price}."""
+    if not crud.get_customer(db, customer_id):
+        raise HTTPException(404, "Mijoz topilmadi")
+    product_id = data.get("product_id")
+    if not product_id or not db.query(models.Product).filter(
+            models.Product.id == product_id).first():
+        raise HTTPException(400, "product_id kerak (mavjud mahsulot)")
+    try:
+        price = crud_v5.set_customer_price(db, customer_id, int(product_id), data.get("price"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    crud.create_system_log(db, user_id=user.telegram_id, user_name=user.full_name,
+                           action=f"API: mijoz {customer_id} maxsus narx", module="crm")
+    return {"price": price}
+
+
+@router.delete("/customers/{customer_id}/prices/{product_id}")
+def api_delete_customer_price(customer_id: int, product_id: int,
+                              db: Session = Depends(get_db),
+                              user: AuthUser = Depends(require_any_edit(["crm", "sales"]))):
+    """DELETE /api/customers/{id}/prices/{product_id} — maxsus narxni o'chirish."""
+    if not crud_v5.delete_customer_price(db, customer_id, product_id):
+        raise HTTPException(404, "Maxsus narx topilmadi")
+    return {"success": True}
+
+
 # ================= BUYURTMALAR / SOTUV (spec: /api/orders) =================
 @router.get("/orders/sales")
 def api_orders_sales(status: Optional[str] = None, limit: int = 100,
@@ -698,7 +743,14 @@ def api_create_order(data: dict, db: Session = Depends(get_db),
     sale_type = str(data.get("sale_type", "retail")).strip()
     unit_price = data.get("unit_price")
     if unit_price is None:
-        if sale_type == "wholesale" and quantity >= 100 and product.wholesale_price:
+        # TZ 3.1: mijoz uchun maxsus narx — aniq unit_price berilmagan bo'lsa qo'llanadi
+        special_price = None
+        if data.get("customer_id"):
+            special_price = crud_v5.get_customer_product_price(
+                db, int(data["customer_id"]), product_id)
+        if special_price is not None:
+            unit_price = special_price
+        elif sale_type == "wholesale" and quantity >= 100 and product.wholesale_price:
             unit_price = product.wholesale_price
         else:
             unit_price = product.selling_price or product.retail_price or 0

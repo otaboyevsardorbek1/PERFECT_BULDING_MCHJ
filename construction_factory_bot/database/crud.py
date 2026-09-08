@@ -1044,7 +1044,10 @@ def create_supplier_delivery(db: Session, supplier_id: int, raw_material_id: int
                              quality_status: str = "qabul_qilingan",
                              price_per_unit: float = 0.0,
                              notes: str = None, created_by: str = None,
-                             photo_path: str = None) -> models.SupplierDelivery:
+                             photo_path: str = None,
+                             batch_number: str = None,
+                             certificate_number: str = None,
+                             expiry_date=None) -> models.SupplierDelivery:
     """
     Yetkazib beruvchidan tovarni qabul qilish (sifat nazorati akti).
     - Qabul qilingan qism ombor zaxirasiga qo'shiladi
@@ -1087,6 +1090,18 @@ def create_supplier_delivery(db: Session, supplier_id: int, raw_material_id: int
     material.last_purchase_date = datetime.now()
     material.supplier = supplier.name
     material.supplier_id = supplier.id
+
+    # TZ (3.2): har bir kirimga unikal partiya raqami va sertifikat yoziladi
+    if batch_number:
+        material.batch_number = str(batch_number).strip()
+    if certificate_number:
+        material.certificate_number = str(certificate_number).strip()
+    if expiry_date:
+        try:
+            from datetime import datetime as _dt
+            material.expiry_date = _dt.fromisoformat(str(expiry_date).replace("Z", ""))
+        except Exception:
+            pass
 
     # Rejalashtirilgan vaqtdan kech/oz kelganini baholash
     if deficiency > 0:

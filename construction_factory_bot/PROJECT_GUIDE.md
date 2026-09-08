@@ -856,6 +856,25 @@ bo'limlari) topilgan qolgan bo'shliqlar yopildi:
 
 Yangi endpoint: `GET /api/documents/lookup?code=<16 raqam>` — javob: `{found, type: sale|return_act|warehouse_transaction, document}`.
 
+## 10. 🆕 v5.2 — Spec yangi 3-bo'limi (FUNKSIONAL MODULLAR) bo'yicha
+
+Remote'da yangilangan spec (3.1–3.15) audit qilindi; funksional bo'shliqlar:
+
+| TZ talabi | Amalga oshirish |
+| :--- | :--- |
+| **Maxsus mijoz narxlari** (3.1) | `customer_prices` jadvali; `GET/PUT/DELETE /api/customers/{id}/prices`; `POST /api/orders` da `unit_price` berilmasa maxsus narx qo'llanadi |
+| **Minimal zaxira** (3.1) | `Product.min_stock`; `GET /api/products/low-stock` har mahsulotning o'z `min_stock` chegarasini hisobga oladi |
+| **Partiya va sertifikat** (3.2) | `RawMaterial.batch_number/certificate_number/expiry_date`; qabul aktida yoziladi; API + bot aktida ko'rinadi |
+
+```
+GET    /api/customers/{id}/prices
+PUT    /api/customers/{id}/prices        {product_id, price}
+DELETE /api/customers/{id}/prices/{product_id}
+```
+
+3.9–3.15 (AI/IoT/Event Sourcing/Feature Flags/ChatOps/SLO/Multi-Cloud) va
+HPA/Spot kabi bulut bo'limlari — infratuzilma strategiyasi, roadmap'da.
+
 ---
 
 ## 📝 Xulosa
