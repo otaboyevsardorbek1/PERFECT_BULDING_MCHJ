@@ -306,6 +306,23 @@ berish mumkin.
 - Rol matritsasiga yangi modullar kiritildi: `vehicles` (direktor/haydovchi),
   `schedule` (direktor), `analytics` (direktor/buxgalter), `training` (barcha)
 
+## 13. 🚚 v5.4 — Yetkazib berishda transport vositasi tanlash
+
+> TZ ERD: `deliveries.vehicle_id` — haydovchi va menejer mashina tanlaydi.
+
+| Qism | Nima qo'shildi | Qayerda |
+| :--- | :--- | :--- |
+| `crud_v54` | `create_delivery_with_vehicle` (topshiriq + faol mashina), `set_delivery_vehicle` (haydovchi GPS boshlashda tanlaydi), `delivery_with_vehicle_dict` (API javobiga `vehicle_id`/`vehicle_number`) | `database/crud_v54.py` |
+| API | `POST /api/deliveries` `vehicle_id` qabul qiladi (noto'g'ri/faol bo'lmagan mashina → 400); `GET /api/deliveries` javobida mashina ko'rinadi | `api_v3.py` |
+| Bot | Menejer: haydovchi → mashina tanlash qadami ("🚫 Mashinasiz" ham bor); Haydovchi: GPS boshlashda mashina tayinlanmagan bo'lsa, o'zi tanlaydi; topshiriq matnida "🚛 Mashina" qatori | `handlers/delivery.py` |
+| Web | Yangi topshiriq formasida "🚛 Transport vositasi" select; jadvalda mashina ustuni | `app_v5.js` |
+
+### 13.1 Natija
+
+- **648 ta test o'tdi** (636 + 12 yangi: `test_delivery_vehicle.py` 9 ta,
+  `test_v53.py`'ga qo'shilgan 3 ta API test) — regressiya yo'q
+- Barcha modullar import toza, `node --check` toza
+
 ### 12.2 Roadmap (funksional emas — arxitektura takliflari)
 
 Spec'dagi "16 ta kelajak bo'limi" (Gen AI, Edge, Blockchain, AR/VR, biometrik,

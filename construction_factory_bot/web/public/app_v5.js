@@ -285,8 +285,8 @@
 
   /* ================= 🚚 YETKAZIB BERISH ================= */
   async function renderDeliveries() {
-    const [d, sales] = await Promise.all([
-      api("/deliveries"), api("/deliveries/deliverable-sales"),
+    const [d, sales, vresp] = await Promise.all([
+      api("/deliveries"), api("/deliveries/deliverable-sales"), api("/vehicles"),
     ]);
     let drivers = [];
     try {
@@ -295,6 +295,7 @@
       const users = await api("/users");
       drivers = (users.users || []).filter((u) => u.role === "haydovchi");
     } catch (e) { /* ro'yxat ko'rinmaydi, yaratish tugmasi passiv bo'ladi */ }
+    const vehicles = (vresp && vresp.vehicles) || [];
     const deliveries = d.deliveries || [];
     const deliverable = sales.sales || [];
     const form = `
@@ -315,6 +316,12 @@
                 ${drivers.map((u) => `<option value="${u.id}">${esc(u.full_name)} (${esc(u.phone_number)})</option>`).join("")}
               </select>
             </label>
+            <label>🚛 Transport vositasi
+              <select id="v5-del-vehicle">
+                <option value="">— mashinasiz (keyin tayinlanadi) —</option>
+                ${vehicles.filter((v) => v.status === "faol").map((v) => `<option value="${v.id}">${esc(v.number)}${v.brand ? " — " + esc(v.brand) : ""}${v.driver_name ? " (" + esc(v.driver_name) + ")" : ""}</option>`).join("")}
+              </select>
+            </label>
           </div>
           <div class="form-actions">
             <button class="btn btn-primary" onclick="v5CreateDelivery()">✅ Biriktirish</button>
@@ -327,7 +334,7 @@
         <td>${esc(x.delivery_number || x.id)}</td>
         <td>${esc(x.customer_name || "—")}<br><span class="muted">${esc(x.customer_address || "")}</span></td>
         <td>${esc(x.product_name || "—")} × ${x.quantity} ${esc(x.unit || "")}</td>
-        <td>${esc(x.driver_name || "—")}</td>
+        <td>${esc(x.driver_name || "—")}${x.vehicle_number ? `<br><span class="muted">🚛 ${esc(x.vehicle_number)}</span>` : ""}</td>
         <td>${badge(x.status_label || x.status || "—", x.status === "yetkazildi" ? "green" : x.status === "yo'lda" ? "blue" : "yellow")}</td>
         <td>
           ${x.status === "tayinlangan" ? `<button class="btn btn-small" data-v5-del-start="${x.id}">🚀 Boshlash</button>` : ""}
@@ -348,9 +355,10 @@
   window.v5CreateDelivery = async function () {
     const saleId = $("#v5-del-sale").value;
     const driverId = $("#v5-del-driver").value;
+    const vehicleId = $("#v5-del-vehicle").value;
     if (!saleId || !driverId) { toast("Sotuv va haydovchini tanlang", "error"); return; }
     try {
-      const r = await apiPost("/deliveries", { sale_id: Number(saleId), driver_id: Number(driverId) });
+      const r = await apiPost("/deliveries", { sale_id: Number(saleId), driver_id: Number(driverId), vehicle_id: vehicleId ? Number(vehicleId) : null });
       if (r.error || r.detail) throw new Error(r.error || r.detail);
       toast("✅ Topshiriq haydovchiga biriktirildi");
       navigate("deliveries");

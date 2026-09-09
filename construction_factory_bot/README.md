@@ -317,6 +317,15 @@ low-code, kripto, ESG) bundan mustasno. Yopilgan bo'shliqlar:
 
 Yangi modullar rol matritsasida: `vehicles`, `schedule`, `analytics`, `training`.
 
+## 🆕 v5.4 — Yetkazib berishda mashina tanlash
+
+TZ ERD `deliveries.vehicle_id` bo'yicha:
+- **Menejer** topshiriq yaratishda haydovchidan keyin **mashina tanlaydi**
+  ("🚫 Mashinasiz" ham mumkin); **haydovchi** GPS kuzatuvni boshlashda
+  mashina tayinlanmagan bo'lsa **o'zi tanlaydi**.
+- `POST /api/deliveries` endi `vehicle_id` qabul qiladi; ro'yxat javobida
+  `vehicle_number` ko'rinadi. Web formada ham transport select bor.
+
 ## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
 
 ```bash

@@ -153,6 +153,11 @@ Direktor/kassir va istalgan xodim uchun parol + **6 xonali kod**:
   (`/api/employees/{id}/open-operations`)
 - 🎓 **Trening simulyatori** — bot'da interaktiv savol-javob + sertifikat
 
+### v5.4 — Yetkazib berishda mashina tanlash
+- 🚛 Menejer topshiriq yaratishda, haydovchi esa GPS boshlashda **mashina
+  tanlaydi** (`deliveries.vehicle_id`); `POST /api/deliveries` `vehicle_id`
+  qabul qiladi, ro'yxatda `vehicle_number` ko'rinadi
+
 ### 🐳 v4.x — Docker + CI/CD
 `docker-compose up -d --build` — api (:8000), web (:3000), bot — SQLite, backups,
 logs shared volume'da. `.github/workflows/ci.yml` — har push/PR da: 621+ test,

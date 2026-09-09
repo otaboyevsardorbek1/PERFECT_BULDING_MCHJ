@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from database import models, crud
+from database import models, crud, crud_v54
 from database.session import get_db
 from dashboard.password_reset import (
     approve_password_reset, complete_password_reset, list_password_resets,
@@ -1110,7 +1110,7 @@ def api_deliveries(db: Session = Depends(get_db), status: Optional[str] = None,
     """Yetkazish topshiriqlari ro'yxati"""
     try:
         items = crud.list_deliveries(db, driver_id=driver_id, status=status, limit=limit)
-        return {"deliveries": [crud.delivery_to_dict(d) for d in items]}
+        return {"deliveries": [crud_v54.delivery_with_vehicle_dict(db, d) for d in items]}
     except Exception as e:
         return {"error": str(e), "deliveries": []}
 
@@ -1148,7 +1148,7 @@ def api_delivery_detail(delivery_id: int, db: Session = Depends(get_db),
         raise HTTPException(404, "Yetkazish topilmadi")
     points = crud.list_delivery_locations(db, delivery_id)
     return {
-        "delivery": crud.delivery_to_dict(d),
+        "delivery": crud_v54.delivery_with_vehicle_dict(db, d),
         "tracking": [{
             "latitude": p.latitude, "longitude": p.longitude,
             "accuracy": p.accuracy, "source": p.source,
@@ -1162,7 +1162,8 @@ def api_create_delivery(data: dict, db: Session = Depends(get_db),
                         user: AuthUser = Depends(require_any_edit(["delivery", "sales"]))):
     """Yangi yetkazish topshirig'i yaratish (haydovchiga biriktirish)"""
     try:
-        d = crud.create_delivery(
+        vehicle_id = int(data["vehicle_id"]) if data.get("vehicle_id") else None
+        d = crud_v54.create_delivery_with_vehicle(
             db,
             sale_id=int(data.get("sale_id", 0)),
             driver_id=int(data.get("driver_id", 0)),
@@ -1170,8 +1171,9 @@ def api_create_delivery(data: dict, db: Session = Depends(get_db),
             address=data.get("address"),
             note=data.get("note"),
             created_by=user.full_name,
+            vehicle_id=vehicle_id,
         )
-        return {"delivery": crud.delivery_to_dict(d)}
+        return {"delivery": crud_v54.delivery_with_vehicle_dict(db, d)}
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

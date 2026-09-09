@@ -909,6 +909,22 @@ GET    /api/employees/{id}/open-operations
 GET    /api/analytics/what-if?scenario=price_down&percent=5
 ```
 
+## 12. 🚚 v5.4 — Yetkazib berishda mashina tanlash
+
+TZ ERD `deliveries.vehicle_id` bo'yicha haydovchi va menejer transport
+vositasini tanlaydi:
+
+- `database/crud_v54.py`: `create_delivery_with_vehicle` (faol mashina
+  tekshiruvi bilan), `set_delivery_vehicle` (haydovchi GPS boshlashda
+  tayinlamagan topshiriqqa mashina tanlaydi), `delivery_with_vehicle_dict`
+  (API javobida `vehicle_id`/`vehicle_number`).
+- API: `POST /api/deliveries` endi `vehicle_id` qabul qiladi;
+  `GET /api/deliveries` javobida mashina ma'lumoti bor.
+- Bot: menejer topshiriq yaratishda haydovchidan keyin mashina tanlaydi
+  ("🚫 Mashinasiz" ixtiyoriy); haydovchi GPS kuzatuvni boshlashda mashina
+  tayinlanmagan bo'lsa o'zi tanlaydi. Topshiriq matnida "🚛 Mashina" qatori.
+- Web: yetkazish formasida transport select + jadvalda mashina ustuni.
+
 ---
 
 ## 📝 Xulosa

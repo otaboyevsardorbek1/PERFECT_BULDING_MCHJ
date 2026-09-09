@@ -319,3 +319,82 @@ def test_haydovchi_can_view_vehicles(client, session):
     # Haydovchi o'zgartira olmaydi
     r = client.post("/api/vehicles", headers=h, json={"number": "X 2"})
     assert r.status_code == 403
+
+
+# ================= 🚚 YETKAZIB BERISHDA MASHINA (v5.4, TZ ERD) =================
+
+def _make_deliverable_sale(session, product, customer=None, qty=50):
+    from database import crud
+    if customer is None:
+        customer = models.Customer(name="Dlv Mijoz", phone="+998900000009",
+                                   address="Toshkent, Chilonzor")
+        session.add(customer)
+        session.commit()
+        session.refresh(customer)
+    return crud.create_sale_record(
+        session, product_id=product.id, quantity=qty, unit_price=1000,
+        total_amount=qty * 1000, payment_method="cash",
+        customer=customer, customer_name=customer.name,
+        customer_phone=customer.phone, user_id=1, user_name="Sotuvchi",
+    )
+
+
+def test_create_delivery_with_vehicle_api(client, session):
+    _make_employee(session)
+    h = _auth_headers(client)
+    driver = _make_employee(session, name="Haydovchi API",
+                            phone="+998901234570", role="haydovchi", is_admin=False)
+    p = _make_product(session)
+    _add_income(session, p, 200)
+    sale = _make_deliverable_sale(session, p)
+    r = client.post("/api/vehicles", headers=h,
+                    json={"number": "01 C 888 EE", "brand": "GAZ",
+                          "capacity": 15000, "fuel_type": "gaz"})
+    vid = r.json()["vehicle"]["id"]
+
+    r = client.post("/api/deliveries", headers=h, json={
+        "sale_id": sale.id, "driver_id": driver.id, "vehicle_id": vid,
+    })
+    assert r.status_code == 200, r.text
+    delivery = r.json()["delivery"]
+    assert delivery["vehicle_id"] == vid
+    assert delivery["vehicle_number"] == "01 C 888 EE (GAZ)"
+
+    # Ro'yxatda ham mashina ko'rinadi
+    r = client.get("/api/deliveries", headers=h)
+    assert r.status_code == 200
+    found = [x for x in r.json()["deliveries"] if x["id"] == delivery["id"]]
+    assert found and found[0]["vehicle_number"] == "01 C 888 EE (GAZ)"
+
+
+def test_create_delivery_with_inactive_vehicle_api(client, session):
+    _make_employee(session)
+    h = _auth_headers(client)
+    driver = _make_employee(session, name="Haydovchi API2",
+                            phone="+998901234571", role="haydovchi", is_admin=False)
+    p = _make_product(session)
+    _add_income(session, p, 200)
+    sale = _make_deliverable_sale(session, p)
+    r = client.post("/api/vehicles", headers=h, json={"number": "01 D 999 FF"})
+    vid = r.json()["vehicle"]["id"]
+    client.put(f"/api/vehicles/{vid}", headers=h, json={"status": "ta'mirda"})
+
+    r = client.post("/api/deliveries", headers=h, json={
+        "sale_id": sale.id, "driver_id": driver.id, "vehicle_id": vid,
+    })
+    assert r.status_code == 400
+
+
+def test_create_delivery_without_vehicle_api(client, session):
+    _make_employee(session)
+    h = _auth_headers(client)
+    driver = _make_employee(session, name="Haydovchi API3",
+                            phone="+998901234572", role="haydovchi", is_admin=False)
+    p = _make_product(session)
+    _add_income(session, p, 200)
+    sale = _make_deliverable_sale(session, p)
+    r = client.post("/api/deliveries", headers=h, json={
+        "sale_id": sale.id, "driver_id": driver.id,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["delivery"]["vehicle_id"] is None

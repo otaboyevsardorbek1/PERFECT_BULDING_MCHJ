@@ -26,7 +26,7 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-from database import crud, models
+from database import crud, crud_v5, crud_v54, models
 from database.session import get_db_session
 from keyboards.main_menu import get_main_menu
 from utils.access import ensure_access, get_user_role
@@ -40,8 +40,23 @@ class DeliveryStates(StatesGroup):
     """Yetkazib berish FSM holatlari"""
     create_sale = State()     # topshiriq uchun sotuv tanlash
     create_driver = State()   # haydovchi tanlash
+    create_vehicle = State()  # mashina tanlash (ixtiyoriy)
     tracking = State()        # GPS kuzatuv / yakunlash faol
     cancel_pick = State()     # bekor qilish uchun topshiriq tanlash
+
+
+def _active_vehicles_rows(db, with_skip: bool = True):
+    """Faol mashinalar ro'yxatini inline tugmalarga aylantiradi."""
+    vehicles = crud_v5.list_vehicles(db, status="faol")
+    rows = []
+    for v in vehicles:
+        label = crud_v54.vehicle_to_label(v)
+        if v.driver_name:
+            label += f" (🚚 {v.driver_name})"
+        rows.append((label, f"dlv_veh_{v.id}"))
+    if with_skip and vehicles:
+        rows.append(("🚫 Mashinasiz (keyin tayinlanadi)", "dlv_veh_skip"))
+    return rows
 
 
 def _driver_keyboard() -> ReplyKeyboardMarkup:
@@ -91,18 +106,25 @@ def _find_employee(db, telegram_id: int):
     ).first()
 
 
-def _delivery_text(d: models.Delivery) -> str:
+def _delivery_text(d: models.Delivery, db=None) -> str:
+    """Topshiriq matni. db berilsa o'sha sessiya ishlatiladi (mashina nomi uchun)."""
     status = STATUS_LABELS.get(d.status, d.status)
     loc = ""
     if d.current_lat is not None and d.current_lng is not None:
         loc = f"📍 {d.current_lat:.6f}, {d.current_lng:.6f}"
     loc_line = ("   " + loc + "\n") if loc else ""
+    veh_line = ""
+    if d.vehicle_id:
+        v = db.query(models.Vehicle).filter(models.Vehicle.id == d.vehicle_id).first() if db else None
+        if v:
+            veh_line = f"   🚛 Mashina: {html.escape(crud_v54.vehicle_to_label(v))}\n"
     return (
         f"📄 <b>{d.delivery_number}</b> — {status}\n"
         f"   🏭 {html.escape(d.product_name or '')} x {_qty(d.quantity)} {d.unit or ''}\n"
         f"   👤 {html.escape(d.customer_name or '-')} | 📞 {html.escape(d.customer_phone or '-')}\n"
         f"   🏠 {html.escape(d.customer_address or '-')}\n"
         f"   🚚 Haydovchi: {html.escape(d.driver_name or '-')}\n"
+        f"{veh_line}"
         f"{loc_line}"
     )
 
@@ -158,7 +180,7 @@ async def driver_my_deliveries(message: Message):
                                  reply_markup=_driver_keyboard())
             return
         text = "📋 <b>Mening topshiriqlarim:</b>\n\n"
-        text += "\n".join(_delivery_text(d) for d in items)
+        text += "\n".join(_delivery_text(d, db) for d in items)
         await message.answer(text[:4000], reply_markup=_driver_keyboard(), parse_mode="HTML")
 
 
@@ -194,7 +216,7 @@ async def driver_gps_start(message: Message, state: FSMContext):
 
 @delivery_router.callback_query(F.data.startswith("dlv_gps_"), DeliveryStates.tracking)
 async def driver_gps_pick(callback: CallbackQuery, state: FSMContext):
-    """Topshiriq tanlandi -> joylashuv yuborish so'raladi"""
+    """Topshiriq tanlandi -> (mashina yo'q bo'lsa tanlatiladi) -> GPS boshlanadi"""
     await callback.answer()
     delivery_id = int(callback.data.replace("dlv_gps_", ""))
     with get_db_session() as db:
@@ -203,6 +225,23 @@ async def driver_gps_pick(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer("❌ Bu topshiriq yakunlangan.", reply_markup=_driver_keyboard())
             await state.clear()
             return
+        if not d.vehicle_id:
+            rows = _active_vehicles_rows(db, with_skip=False)
+            if rows:
+                # Haydovchi mashinani o'zi tanlaydi (TZ: haydovchi vehicle_id tanlasin)
+                veh_rows = [
+                    (f"🚛 {label}", f"dlv_gpsveh_{delivery_id}_{vid}")
+                    for label, cb in rows
+                    for vid in [int(cb.replace("dlv_veh_", ""))]
+                ]
+                await state.update_data(delivery_id=delivery_id)
+                await callback.message.answer(
+                    "🛰️ <b>GPS KUZATUV</b>\n\n"
+                    f"📄 {d.delivery_number} — {html.escape(d.customer_name or '')}\n"
+                    "🚛 Bu topshiriqga mashina tayinlanmagan. Qaysi mashinada ketasiz?",
+                    reply_markup=_inline(veh_rows), parse_mode="HTML",
+                )
+                return
         crud.start_delivery(db, delivery_id)
         d = crud.get_delivery(db, delivery_id)
         await state.update_data(delivery_id=delivery_id)
@@ -211,6 +250,34 @@ async def driver_gps_pick(callback: CallbackQuery, state: FSMContext):
             f"📄 {d.delivery_number} — {html.escape(d.customer_name or '')}\n\n"
             "📍 Pastdagi tugma orqali <b>joylashuvni yuboring</b>.\n"
             "Har bir nuqta tizimda saqlanadi va kuzatuv sifatida ko'rsatiladi.",
+            reply_markup=_gps_keyboard(), parse_mode="HTML",
+        )
+
+
+@delivery_router.callback_query(F.data.startswith("dlv_gpsveh_"), DeliveryStates.tracking)
+async def driver_gps_pick_vehicle(callback: CallbackQuery, state: FSMContext):
+    """Haydovchi mashinani tanladi -> topshiriqqa bog'lanadi -> GPS boshlanadi"""
+    await callback.answer()
+    parts = callback.data.replace("dlv_gpsveh_", "").split("_")
+    delivery_id = int(parts[0])
+    vehicle_id = int(parts[1])
+    with get_db_session() as db:
+        try:
+            d = crud_v54.set_delivery_vehicle(db, delivery_id, vehicle_id)
+        except ValueError as e:
+            await callback.message.answer(f"❌ {str(e)}", reply_markup=_driver_keyboard())
+            await state.clear()
+            return
+        crud.start_delivery(db, delivery_id)
+        d = crud.get_delivery(db, delivery_id)
+        await state.update_data(delivery_id=delivery_id)
+        v = db.query(models.Vehicle).filter(models.Vehicle.id == d.vehicle_id).first() if d.vehicle_id else None
+        veh_line = f"🚛 Mashina: {html.escape(crud_v54.vehicle_to_label(v))}\n" if v else ""
+        await callback.message.answer(
+            "🛰️ <b>GPS KUZATUV BOSHLANDI</b>\n\n"
+            f"📄 {d.delivery_number} — {html.escape(d.customer_name or '')}\n"
+            f"{veh_line}\n"
+            "📍 Pastdagi tugma orqali <b>joylashuvni yuboring</b>.",
             reply_markup=_gps_keyboard(), parse_mode="HTML",
         )
 
@@ -375,23 +442,59 @@ async def manager_create_pick_driver(callback: CallbackQuery, state: FSMContext)
 
 
 @delivery_router.callback_query(F.data.startswith("dlv_drv_"), DeliveryStates.create_driver)
-async def manager_create_confirm(callback: CallbackQuery, state: FSMContext):
-    """Haydovchi tanlandi -> topshiriq yaratiladi"""
+async def manager_create_pick_vehicle(callback: CallbackQuery, state: FSMContext):
+    """Haydovchi tanlandi -> mashina tanlash (ixtiyoriy) -> topshiriq yaratiladi"""
     await callback.answer()
     driver_id = int(callback.data.replace("dlv_drv_", ""))
+    await state.update_data(driver_id=driver_id)
+    data = await state.get_data()
+    sale_id = data.get("sale_id")
+    with get_db_session() as db:
+        sale = db.query(models.Sale).filter(models.Sale.id == sale_id).first()
+        rows = _active_vehicles_rows(db, with_skip=True)
+    if not rows:
+        # Faol mashina yo'q — to'g'ridan-to'g'ri topshiriq yaratamiz
+        await _manager_create_final(callback, state, driver_id=driver_id, vehicle_id=None)
+        return
+    await callback.message.answer(
+        f"➕ <b>TOPSHIRIQ YARATISH</b>\n\n"
+        f"🧾 Sotuv: {sale.invoice_number if sale else '—'}\n"
+        "🚛 Transport vositasini tanlang:",
+        reply_markup=_inline(rows), parse_mode="HTML",
+    )
+    await DeliveryStates.create_vehicle.set()
+
+
+@delivery_router.callback_query(F.data.startswith("dlv_veh_"), DeliveryStates.create_vehicle)
+async def manager_create_confirm(callback: CallbackQuery, state: FSMContext):
+    """Mashina tanlandi -> topshiriq yaratiladi"""
+    await callback.answer()
+    data = await state.get_data()
+    if callback.data == "dlv_veh_skip":
+        vehicle_id = None
+    else:
+        vehicle_id = int(callback.data.replace("dlv_veh_", ""))
+    await _manager_create_final(callback, state, driver_id=data.get("driver_id"),
+                                vehicle_id=vehicle_id)
+
+
+async def _manager_create_final(callback: CallbackQuery, state: FSMContext,
+                                driver_id: int, vehicle_id):
+    """Topshiriqni yakuniy yaratish (mashina bilan yoki mashinasiz)"""
     data = await state.get_data()
     try:
         with get_db_session() as db:
-            d = crud.create_delivery(
+            d = crud_v54.create_delivery_with_vehicle(
                 db,
                 sale_id=data.get("sale_id"),
                 driver_id=driver_id,
                 quantity=data.get("remaining"),
                 created_by=callback.from_user.full_name,
+                vehicle_id=vehicle_id,
             )
             text = (
                 "✅ <b>TOPSHIRIQ YARATILDI</b>\n\n"
-                f"{_delivery_text(d)}\n"
+                f"{_delivery_text(d, db)}\n"
                 f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
             )
             await callback.message.answer(text, reply_markup=_manager_keyboard(), parse_mode="HTML")
@@ -413,7 +516,7 @@ async def manager_all_deliveries(message: Message):
             await message.answer("📭 Hozircha yetkazishlar yo'q.", reply_markup=_manager_keyboard())
             return
         text = "🚚 <b>YETKAZISHLAR (so'nggi 10):</b>\n\n"
-        text += "\n".join(_delivery_text(d) for d in items)
+        text += "\n".join(_delivery_text(d, db) for d in items)
         await message.answer(text[:4000], reply_markup=_manager_keyboard(), parse_mode="HTML")
 
 
