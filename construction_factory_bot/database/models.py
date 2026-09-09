@@ -121,6 +121,7 @@ class Product(Base):
     wholesale_price = Column(Float, nullable=True)  # ulgurji narx
     retail_price = Column(Float, nullable=True)  # chakana narx
     min_stock = Column(Float, default=0.0)  # TZ (3.1): minimal qoldiq chegarasi — tizim ogohlantiradi
+    max_stock = Column(Float, nullable=True)  # TZ ERD: ombor to'lish chegarasi — ortiqcha zaxira ogohlantirishi
     warehouse = Column(String(50), default="tayyor")  # qaysi omborda
     sector = Column(String(20), nullable=True)
     storage_conditions = Column(String(100), nullable=True)
@@ -587,6 +588,7 @@ class Delivery(Base):
     quantity = Column(Float, nullable=False)  # yetkaziladigan miqdor
     driver_id = Column(Integer, ForeignKey("employees.id"), nullable=True, index=True)
     driver_name = Column(String(100), nullable=True)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True, index=True)  # TZ ERD: vehicles
     status = Column(String(20), default="tayinlangan")  # tayinlangan | yo'lda | yetkazildi | bekor
     # GPS kuzatuv
     start_lat = Column(Float, nullable=True)
@@ -919,7 +921,8 @@ class FuelLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     driver_id = Column(Integer, ForeignKey("employees.id"), nullable=True, index=True)
     driver_name = Column(String(100), nullable=True)
-    vehicle = Column(String(50), nullable=True)          # mashina raqami / nomi
+    vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True, index=True)  # TZ ERD: vehicles
+    vehicle = Column(String(50), nullable=True)          # mashina raqami / nomi (eski qiymat, moslashuv)
     odometer_km = Column(Float, nullable=True)          # quyish vaqtidagi spidometr
     prev_odometer_km = Column(Float, nullable=True)     # oldingi quyishdagi ko'rsatkich
     liters = Column(Float, nullable=False)              # quyilgan litr
@@ -931,6 +934,7 @@ class FuelLog(Base):
 
     # Aloqalar
     driver = relationship("Employee")
+    vehicle_rel = relationship("Vehicle", back_populates="fuel_logs")
 
 
 class ExpenseReport(Base):
@@ -1048,6 +1052,33 @@ class Warehouse(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Vehicle(Base):
+    """Transport vositalari katalogi (TZ ERD: vehicles jadvali)
+
+    Har bir mashina: davlat raqami, haydovchi, yuk ko'tarish qobiliyati,
+    yoqilg'i turi va 1 km ga yoqilg'i normasi. FuelLog va yetkazib berish
+    topshiriqlari mashinaga bog'lanadi.
+    """
+    __tablename__ = "vehicles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(30), unique=True, index=True)       # davlat raqami (01 A 123 BB)
+    brand = Column(String(50), nullable=True)                  # marka/model
+    driver_id = Column(Integer, ForeignKey("employees.id"), nullable=True, index=True)
+    driver_name = Column(String(100), nullable=True)
+    capacity = Column(Float, default=0.0)                      # yuk ko'tarish qobiliyati (kg)
+    fuel_type = Column(String(20), default="benzin")          # benzin | dizel | gaz | elektr
+    fuel_norm_per_km = Column(Float, default=0.0)              # 1 km ga litr normasi
+    status = Column(String(20), default="faol")               # faol | ta'mirda | bekor
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Aloqalar
+    driver = relationship("Employee")
+    fuel_logs = relationship("FuelLog", back_populates="vehicle_rel")
+
+
 # =====================================================
 # AVTOMATIK SCHEMA MIGRATSIYA (eski construction.db ga)
 # Yangi ustunlar/jadvallarni qo'shadi, ma'lumot o'chirilmaydi
@@ -1072,6 +1103,10 @@ EXTRA_COLUMNS = {
         ("storage_conditions", "VARCHAR(100)"),
         ("tags", "VARCHAR(100)"),
         ("min_stock", "FLOAT"),
+        ("max_stock", "FLOAT"),
+    ],
+    "fuel_logs": [
+        ("vehicle_id", "INTEGER"),
     ],
     "warehouse_transactions": [
         ("source_warehouse", "VARCHAR(50)"),
@@ -1090,6 +1125,7 @@ EXTRA_COLUMNS = {
         ("signature_name", "VARCHAR(100)"),
         ("signature_type", "VARCHAR(20)"),
         ("signature_at", "DATETIME"),
+        ("vehicle_id", "INTEGER"),
     ],
     "web_sessions": [
         ("revoke_reason", "VARCHAR(30)"),

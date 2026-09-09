@@ -468,3 +468,346 @@ def list_products_below_min_stock(db: Session) -> List[Dict]:
             result.append({"product": p, "available_qty": available,
                            "min_stock": float(p.min_stock or 0)})
     return result
+
+
+# =============== v5.3: TRANSPORT VOSITALARI (TZ ERD: vehicles) ===============
+def create_vehicle(db: Session, data: Dict) -> models.Vehicle:
+    """Yangi transport vositasini yaratish."""
+    v = models.Vehicle(
+        number=str(data.get("number", "")).strip(),
+        brand=str(data.get("brand", "")).strip() or None,
+        driver_id=data.get("driver_id"),
+        driver_name=str(data.get("driver_name", "")).strip() or None,
+        capacity=float(data.get("capacity", 0) or 0),
+        fuel_type=str(data.get("fuel_type", "benzin")).strip() or "benzin",
+        fuel_norm_per_km=float(data.get("fuel_norm_per_km", 0) or 0),
+        status=str(data.get("status", "faol")).strip() or "faol",
+        notes=str(data.get("notes", "")).strip() or None,
+    )
+    db.add(v)
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+def get_vehicle(db: Session, vehicle_id: int) -> Optional[models.Vehicle]:
+    return db.query(models.Vehicle).filter(models.Vehicle.id == vehicle_id).first()
+
+
+def list_vehicles(db: Session, status: str = None) -> List[models.Vehicle]:
+    q = db.query(models.Vehicle)
+    if status:
+        q = q.filter(models.Vehicle.status == status)
+    return q.order_by(models.Vehicle.number).all()
+
+
+def update_vehicle(db: Session, vehicle_id: int, data: Dict) -> Optional[models.Vehicle]:
+    v = get_vehicle(db, vehicle_id)
+    if not v:
+        return None
+    for field in ("number", "brand", "driver_name", "fuel_type", "status", "notes"):
+        if field in data and data[field] is not None:
+            setattr(v, field, str(data[field]).strip())
+    for field in ("driver_id", "capacity", "fuel_norm_per_km"):
+        if field in data and data[field] is not None:
+            setattr(v, field, float(data[field]))
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+def delete_vehicle(db: Session, vehicle_id: int) -> bool:
+    v = get_vehicle(db, vehicle_id)
+    if not v:
+        return False
+    db.delete(v)
+    db.commit()
+    return True
+
+
+def vehicle_to_dict(v: models.Vehicle) -> Dict:
+    return {
+        "id": v.id,
+        "number": v.number,
+        "brand": v.brand,
+        "driver_id": v.driver_id,
+        "driver_name": v.driver_name,
+        "capacity": v.capacity,
+        "fuel_type": v.fuel_type,
+        "fuel_norm_per_km": v.fuel_norm_per_km,
+        "status": v.status,
+        "notes": v.notes,
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+    }
+
+
+# =============== v5.3: ORTIQCHA ZAXIRA (TZ ERD: max_stock) ===============
+def product_available_qty(db: Session, product: models.Product) -> float:
+    """Mahsulotning hozirgi erkin qoldig'i (kirim - chiqim)."""
+    income = db.query(func.coalesce(func.sum(models.WarehouseTransaction.quantity), 0.0)).filter(
+        models.WarehouseTransaction.product_id == product.id,
+        models.WarehouseTransaction.transaction_type == models.TransactionType.INCOME,
+    ).scalar() or 0.0
+    outcome = db.query(func.coalesce(func.sum(models.WarehouseTransaction.quantity), 0.0)).filter(
+        models.WarehouseTransaction.product_id == product.id,
+        models.WarehouseTransaction.transaction_type == models.TransactionType.OUTCOME,
+    ).scalar() or 0.0
+    return float(income) - float(outcome)
+
+
+def list_products_over_max_stock(db: Session) -> List[Dict]:
+    """max_stock chegarasidan yuqori bo'lgan mahsulotlar (ortiqcha zaxira)."""
+    result = []
+    for p in db.query(models.Product).filter(models.Product.is_active.is_(True)).all():
+        available = product_available_qty(db, p)
+        if float(p.max_stock or 0) > 0 and available > float(p.max_stock):
+            result.append({"product": p, "available_qty": available,
+                           "max_stock": float(p.max_stock or 0)})
+    return result
+
+
+def get_warehouse_fill_levels(db: Session) -> List[Dict]:
+    """Rangli ombor xaritasi (TZ B-bo'lim): har bir omborning to'liqlik darajasi.
+
+    Qizil = max_stock chegarasidan oshgan, sariq = 70%+, yashil = normal.
+    Omborlar: warehouses katalogi + eski string ombor nomlari.
+    """
+    names = [w.name for w in db.query(models.Warehouse).filter(models.Warehouse.is_active.is_(True)).all()]
+    for r in db.query(models.RawMaterial.warehouse).distinct().all():
+        if r[0] and r[0] not in names:
+            names.append(r[0])
+    for r in db.query(models.Product.warehouse).distinct().all():
+        if r[0] and r[0] not in names:
+            names.append(r[0])
+    if "asosiy" not in names:
+        names.insert(0, "asosiy")
+    result = []
+    for name in names:
+        items = 0
+        capacity = 0.0
+        used = 0.0
+        # Xom ashyolar
+        for rm in db.query(models.RawMaterial).filter(models.RawMaterial.warehouse == name).all():
+            items += 1
+            cap = float(rm.max_stock or 0)
+            if cap > 0:
+                capacity += cap
+                used += min(float(rm.current_stock or 0), cap)
+        # Tayyor mahsulotlar
+        for p in db.query(models.Product).filter(models.Product.warehouse == name).all():
+            items += 1
+            cap = float(p.max_stock or 0)
+            if cap > 0:
+                capacity += cap
+                qty = product_available_qty(db, p)
+                used += min(qty, cap)
+        fill = round(used / capacity * 100, 1) if capacity > 0 else 0.0
+        level = "yashil" if fill < 70 else ("sariq" if fill < 100 else "qizil")
+        result.append({"warehouse": name, "items": items, "capacity": round(capacity, 1),
+                       "used": round(used, 1), "fill_percent": fill, "level": level})
+    return result
+
+
+# =============== v5.3: AMAL MUDDATI ESLATMASI (TZ 3.1/3.2) ===============
+def get_expiring_materials(db: Session, days: int = 30) -> List[Dict]:
+    """Amal qilish muddati yaqinlashgan yoki o'tgan xom ashyolar."""
+    now = datetime.utcnow()
+    horizon = now + timedelta(days=max(days, 1))
+    result = []
+    for rm in db.query(models.RawMaterial).filter(
+        models.RawMaterial.expiry_date.isnot(None)
+    ).all():
+        expiry = rm.expiry_date
+        if expiry.tzinfo:
+            expiry_naive = expiry.replace(tzinfo=None)
+        else:
+            expiry_naive = expiry
+        if expiry_naive <= horizon:
+            days_left = (expiry_naive - now).days
+            result.append({
+                "raw_material_id": rm.id,
+                "name": rm.name,
+                "batch_number": rm.batch_number,
+                "certificate_number": rm.certificate_number,
+                "expiry_date": expiry.isoformat() if expiry else None,
+                "days_left": days_left,
+                "status": "muddati_o'tgan" if days_left < 0 else "yaqinlashmoqda",
+                "current_stock": float(rm.current_stock or 0),
+                "supplier": rm.supplier,
+            })
+    result.sort(key=lambda x: x["days_left"])
+    return result
+
+
+# =============== v5.3: XODIM SMENASI KALENDARI (TZ E-bo'lim) ===============
+def get_work_schedule(db: Session, month: str = None) -> Dict:
+    """Bir oy uchun xodimlar smenasi kalendari.
+
+    month: 'YYYY-MM' (standart — joriy oy). Har bir xodim uchun ishlagan
+    kunlar soni, jami soatlar, qo'shimcha vaqt va holati (ta'tilda / faol).
+    """
+    try:
+        if month and len(month) == 7:
+            year = int(month[:4])
+            mon = int(month[5:7])
+        else:
+            now = datetime.utcnow()
+            year, mon = now.year, now.month
+        start = datetime(year, mon, 1)
+        if mon == 12:
+            end = datetime(year + 1, 1, 1)
+        else:
+            end = datetime(year, mon + 1, 1)
+    except (ValueError, TypeError):
+        now = datetime.utcnow()
+        start = datetime(now.year, now.month, 1)
+        end = datetime(now.year, now.month + 1, 1) if now.month < 12 else datetime(now.year + 1, 1, 1)
+
+    rows = []
+    for emp in db.query(models.Employee).order_by(models.Employee.full_name).all():
+        wh = db.query(models.WorkHours).filter(
+            models.WorkHours.employee_id == emp.id,
+            models.WorkHours.start_time >= start,
+            models.WorkHours.start_time < end,
+        ).all()
+        total_hours = sum(float(w.hours_worked or 0) for w in wh)
+        overtime = sum(float(w.overtime_hours or 0) for w in wh)
+        work_days = {w.start_time.date() for w in wh if w.start_time}
+        rows.append({
+            "employee_id": emp.id,
+            "full_name": emp.full_name,
+            "role": emp.role or emp.position or "-",
+            "status": emp.status.value if hasattr(emp.status, "value") else str(emp.status or "faol"),
+            "work_days": len(work_days),
+            "total_hours": round(total_hours, 2),
+            "overtime_hours": round(overtime, 2),
+            "shifts": [
+                {"date": w.start_time.date().isoformat(), "shift_type": w.shift_type,
+                 "hours": round(float(w.hours_worked or 0), 2)}
+                for w in sorted(wh, key=lambda x: x.start_time)
+            ][-31:],
+        })
+    return {"month": start.strftime("%Y-%m"), "employees": rows}
+
+
+# =============== v5.3: XODIM OCHIQ OPERATSIYALARI (TZ H-bo'lim) ===============
+def get_employee_open_operations(db: Session, employee_id: int) -> Dict:
+    """Xodim ishdan ketmoqchi bo'lsa — ochiq operatsiyalari ro'yxati.
+
+    Direktor topshiriq sifatida ko'radi: tugallanmagan sotuvlar (nasiya),
+    faol yetkazib berishlar, ochiq yig'ish varaqalari, jarayondagi ishlab
+    chiqarish buyurtmalari va ochiq kassa smenasi.
+    """
+    emp = db.query(models.Employee).filter(models.Employee.id == employee_id).first()
+    if not emp:
+        return None
+    emp_name = emp.full_name or emp.username or "-"
+    # Nasiya sotuvlari (to'liq to'lanmagan)
+    open_sales = db.query(models.Sale).filter(
+        models.Sale.is_credit.is_(True),
+        models.Sale.credit_status.in_(("qisman", "tolanmagan", "muddati_otgan")),
+    ).all()
+    sales_list = [
+        {"id": s.id, "customer_name": s.customer_name,
+         "total": float(s.total_amount or 0), "paid": float(s.paid_amount or 0),
+         "remaining": round(float(s.total_amount or 0) - float(s.paid_amount or 0), 2)}
+        for s in open_sales
+    ]
+    # Faol yetkazib berishlar
+    deliveries = db.query(models.Delivery).filter(
+        models.Delivery.status.in_(("tayinlangan", "yo'lda"))
+    ).all()
+    delivery_list = [
+        {"id": d.id, "delivery_number": d.delivery_number, "status": d.status,
+         "customer_name": d.customer_name, "product_name": d.product_name}
+        for d in deliveries
+    ]
+    # Ochiq yig'ish varaqalari
+    picking = db.query(models.PickingList).filter(
+        models.PickingList.status.in_(("yangi", "jarayonda"))
+    ).all()
+    picking_list = [
+        {"id": p.id, "picking_number": p.picking_number, "product_name": p.product_name,
+         "quantity": float(p.quantity or 0), "status": p.status}
+        for p in picking
+    ]
+    # Jarayondagi ishlab chiqarish buyurtmalari
+    production = db.query(models.ProductionOrder).filter(
+        models.ProductionOrder.status.in_(("yangi", "jarayonda", "ishlab_chiqarilmoqda"))
+    ).all()
+    production_list = [
+        {"id": o.id, "product_name": o.product_name, "quantity": float(o.quantity or 0),
+         "status": o.status, "start_date": o.start_date.isoformat() if o.start_date else None}
+        for o in production
+    ]
+    # Ochiq kassa smenasi
+    open_shift = db.query(models.CashShift).filter(models.CashShift.status == "ochiq").first()
+    return {
+        "employee_id": emp.id,
+        "full_name": emp_name,
+        "open_sales": sales_list,
+        "active_deliveries": delivery_list,
+        "open_picking_lists": picking_list,
+        "in_progress_production": production_list,
+        "open_cash_shift": {"id": open_shift.id, "cashier_name": open_shift.cashier_name}
+        if open_shift else None,
+        "total_open_items": len(sales_list) + len(delivery_list) + len(picking_list)
+        + len(production_list) + (1 if open_shift else 0),
+    }
+
+
+# =============== v5.3: "NIMA BO'LSA?" TAHLILI (TZ E-bo'lim) ===============
+def what_if_analysis(db: Session, scenario: str = "price_down", percent: float = 5.0,
+                     product_id: int = None, days: int = 90) -> Dict:
+    """"Nima bo'lsa?" tahlili — tarixiy sotuvlar asosida prognoz.
+
+    scenario: price_down (narx pasayishi), price_up (narx oshishi),
+              discount (chegirma foizi). Tizim o'tgan davrdagi sotuvlar,
+              o'rtacha chek va qoldiq asosida taxminiy ta'sirni hisoblaydi.
+    """
+    now = datetime.utcnow()
+    start = now - timedelta(days=max(days, 7))
+    pct = float(percent or 0)
+
+    def _base():
+        q = db.query(models.Sale).filter(models.Sale.sale_date >= start)
+        if product_id:
+            q = q.filter(models.Sale.product_id == product_id)
+        sales = q.all()
+        revenue = sum(float(s.total_amount or 0) for s in sales)
+        qty = sum(float(s.quantity or 0) for s in sales)
+        count = len(sales)
+        avg_check = revenue / count if count else 0.0
+        return revenue, qty, count, avg_check
+
+    revenue, qty, count, avg_check = _base()
+    if scenario == "price_down":
+        # Narx p% pasaysa: talab ~ p*0.6% oshadi (konservativ elastiklik)
+        demand_boost = pct * 0.6
+        new_revenue = revenue * (1 - pct / 100) * (1 + demand_boost / 100)
+        scenario_label = f"Narx {pct}% pasaytirilsa"
+    elif scenario == "price_up":
+        demand_drop = pct * 0.5
+        new_revenue = revenue * (1 + pct / 100) * (1 - demand_drop / 100)
+        scenario_label = f"Narx {pct}% oshirilsa"
+    elif scenario == "discount":
+        new_revenue = revenue * (1 - pct / 100)
+        scenario_label = f"Chegirma {pct}% berilsa (marja kamayadi)"
+    else:
+        new_revenue = revenue
+        scenario_label = scenario
+
+    return {
+        "scenario": scenario,
+        "scenario_label": scenario_label,
+        "percent": pct,
+        "period_days": days,
+        "base_revenue": round(revenue, 2),
+        "base_quantity": round(qty, 2),
+        "base_order_count": count,
+        "avg_check": round(avg_check, 2),
+        "projected_revenue": round(new_revenue, 2),
+        "delta": round(new_revenue - revenue, 2),
+        "delta_percent": round((new_revenue - revenue) / revenue * 100, 2) if revenue else 0.0,
+        "note": "Konservativ talab elastikligi asosida taxminiy hisob (o'tgan {} kun ma'lumotlari)".format(days),
+    }

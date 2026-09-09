@@ -423,6 +423,7 @@ async def main():
     from handlers.delivery import register_handlers_delivery
     from handlers.cash_shift import register_handlers_cash_shift
     from handlers.operations import register_handlers_operations
+    from handlers.training import register_handlers_training
     
     register_handlers_bot_auth(dp)
     register_handlers_start(dp)
@@ -446,6 +447,7 @@ async def main():
     register_handlers_delivery(dp)
     register_handlers_cash_shift(dp)
     register_handlers_operations(dp)
+    register_handlers_training(dp)
     
     logger.info("✅ Barcha handlerlar ro'yxatdan o'tkazildi")
     

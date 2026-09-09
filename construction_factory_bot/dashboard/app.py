@@ -136,6 +136,8 @@ app.add_middleware(CostVisibilityMiddleware)
 # /orders/sales) v3 dagi {customer_id}/{order_number} parametrli yo'llardan ustun turadi.
 from dashboard.api_v5 import router as api_v5_router
 app.include_router(api_v5_router)
+from dashboard.api_v53 import router as api_v53_router
+app.include_router(api_v53_router)
 from dashboard.api_v3 import router as api_v3_router
 app.include_router(api_v3_router)
 

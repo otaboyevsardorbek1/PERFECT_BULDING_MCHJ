@@ -289,6 +289,34 @@ keyin qo'shildi:
   `certificate_number`, `expiry_date` — qabul aktida yoziladi, API va bot
   aktida ko'rinadi.
 
+## 🆕 v5.3 — Transport, max_stock, what-if, amal muddati, smena, trening
+
+Spec (10 085 qator) to'liq qayta audit qilindi — **16 ta kelajak bo'limi**
+(Gen AI, Edge, Blockchain, AR/VR, biometrik, avtonom dronlar, kvant,
+self-healing, DID, carbon, voice, predictive analytics, digital twins,
+low-code, kripto, ESG) bundan mustasno. Yopilgan bo'shliqlar:
+
+- **🚗 Transport vositalari** (ERD `vehicles`): `vehicles` jadvali + to'liq CRUD
+  API (`/api/vehicles`), `fuel_logs.vehicle_id`, `deliveries.vehicle_id`;
+  bot "🚗 Transport" + web sahifa.
+- **📉 Ortiqcha zaxira** (ERD `max_stock`): `Product.max_stock`;
+  `GET /api/products/over-stock`.
+- **🗺️ Rangli ombor xaritasi**: `GET /api/warehouses/fill-levels` — har ombor
+  uchun yashil/sariq/qizil to'liqlik darajasi.
+- **🤔 "Nima bo'lsa?" tahlili** (E-bo'lim): `GET /api/analytics/what-if` —
+  narx/chegirma o'zgarishining 90 kunlik prognozi; bot + web sahifa.
+- **⏳ Amal muddati eslatmasi** (3.1/3.2): `GET /api/inventory/expiring` —
+  yaqinlashgan/o'tgan xom ashyolar; bot + web sahifa.
+- **📅 Xodimlar smenasi kalendari** (E-bo'lim): `GET /api/work-schedule`;
+  bot + web sahifa.
+- **📤 Xodim ochiq operatsiyalari** (H-bo'lim): `GET /api/employees/{id}/open-operations`
+  — ishdan ketmoqchi xodimning topshiriqlari.
+- **🎓 Trening simulyatori** ("Eng muhim taklif"): bot'da 4 mavzu (sotuv,
+  ombor, yetkazib berish, xavfsizlik), har birida 3 savol + izohlar,
+  yakunda SERTIFIKAT.
+
+Yangi modullar rol matritsasida: `vehicles`, `schedule`, `analytics`, `training`.
+
 ## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
 
 ```bash

@@ -142,6 +142,17 @@ Direktor/kassir va istalgan xodim uchun parol + **6 xonali kod**:
 - 📉 **Mahsulot `min_stock`** — low-stock hisobotda o'z chegarasi ishlatiladi
 - 🔖 **Partiya/sertifikat/amal muddati** xomashyo qabul aktiga yoziladi
 
+### v5.3 — Transport + max_stock + what-if + Trening (spec to'liq qayta auditi)
+- 🚗 **Transport vositalari** (ERD `vehicles`): to'liq CRUD API + bot/web;
+  `fuel_logs.vehicle_id` va `deliveries.vehicle_id` bog'lanishi
+- 📉 **`Product.max_stock`** → `GET /api/products/over-stock` (ortiqcha zaxira)
+  va 🗺️ `GET /api/warehouses/fill-levels` (rangli ombor xaritasi)
+- 🤔 **"Nima bo'lsa?" tahlili** — `GET /api/analytics/what-if` (narx/chegirma prognozi)
+- ⏳ **Amal muddati eslatmasi** — `GET /api/inventory/expiring`
+- 📅 **Smena kalendari** (`/api/work-schedule`) + 📤 **xodim ochiq operatsiyalari**
+  (`/api/employees/{id}/open-operations`)
+- 🎓 **Trening simulyatori** — bot'da interaktiv savol-javob + sertifikat
+
 ### 🐳 v4.x — Docker + CI/CD
 `docker-compose up -d --build` — api (:8000), web (:3000), bot — SQLite, backups,
 logs shared volume'da. `.github/workflows/ci.yml` — har push/PR da: 621+ test,

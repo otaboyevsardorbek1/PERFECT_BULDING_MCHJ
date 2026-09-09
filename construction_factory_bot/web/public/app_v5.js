@@ -20,6 +20,10 @@
   PAGES.returns = "↩️ Qaytarish";
   PAGES.cashshifts = "💵 Smena (kassa)";
   PAGES.shoporders = "🛒 Do'kon buyurtmalari";
+  PAGES.transport = "🚗 Transport";
+  PAGES.analytics = "🤔 Nima bo'lsa?";
+  PAGES.schedule = "📅 Smena kalendari";
+  PAGES.expiry = "⏳ Amal muddati";
 
   PAGE_MODULES.sales = "sales";
   PAGE_MODULES.production = "production";
@@ -27,6 +31,10 @@
   PAGE_MODULES.returns = "sales"; // API: sales|finance|crm
   PAGE_MODULES.cashshifts = "cash_shift";
   PAGE_MODULES.shoporders = "finance";
+  PAGE_MODULES.transport = "vehicles";
+  PAGE_MODULES.analytics = "analytics";
+  PAGE_MODULES.schedule = "schedule";
+  PAGE_MODULES.expiry = "warehouse";
 
   const money = (n) => (Number(n) || 0).toLocaleString("uz-UZ") + " so'm";
 
@@ -560,12 +568,170 @@
   };
 
   /* ---------- Renderer'larni ro'yxatga olish ---------- */
+  /* ================= 🚗 TRANSPORT VOSITALARI (TZ ERD: vehicles) ================= */
+  async function renderTransport() {
+    const root = $("#page-root") || $("#content");
+    root.innerHTML = `<div class="panel">
+      <div class="panel-header"><h3>🚗 Transport vositalari</h3>
+        <button class="btn btn-primary" onclick="v5OpenVehicle()">➕ Yangi mashina</button>
+      </div>
+      <div class="panel-body" id="v5-vehicles-list">Yuklanmoqda…</div>
+    </div>`;
+    try {
+      const r = await api("/vehicles");
+      if (r.error) throw new Error(r.error);
+      const list = r.vehicles || [];
+      if (!list.length) {
+        $("#v5-vehicles-list").innerHTML = `<p class="empty">🚗 Hozircha mashina ro'yxatga olinmagan.</p>`;
+        return;
+      }
+      $("#v5-vehicles-list").innerHTML = `<div class="table-wrap"><table class="table">
+        <thead><tr><th>Raqam</th><th>Marka</th><th>Haydovchi</th><th>Yuk (kg)</th><th>Yoqilg'i</th><th>Norma (l/km)</th><th>Holat</th></tr></thead>
+        <tbody>${list.map((v) => `<tr>
+          <td><b>${esc(v.number)}</b></td>
+          <td>${esc(v.brand || "-")}</td>
+          <td>${esc(v.driver_name || "-")}</td>
+          <td>${(Number(v.capacity) || 0).toLocaleString("uz-UZ")}</td>
+          <td>${esc(v.fuel_type || "-")}</td>
+          <td>${v.fuel_norm_per_km || 0}</td>
+          <td>${v.status === "faol" ? "🟢" : v.status === "ta'mirda" ? "🟠" : "⚫"} ${esc(v.status || "-")}</td>
+        </tr>`).join("")}</tbody></table></div>`;
+    } catch (e) { toast(e.message, "error"); $("#v5-vehicles-list").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+  }
+
+  window.v5OpenVehicle = () => {
+    openModal(`<h3>➕ Yangi transport vositasi</h3>
+      <div class="form-grid">
+        <label>Davlat raqami <input id="veh-number" placeholder="01 A 123 BB"></label>
+        <label>Marka/model <input id="veh-brand" placeholder="MAN TGS"></label>
+        <label>Yuk ko'tarish (kg) <input id="veh-capacity" type="number" placeholder="20000"></label>
+        <label>Yoqilg'i turi
+          <select id="veh-fuel"><option value="benzin">Benzin</option><option value="dizel">Dizel</option><option value="gaz">Gaz</option><option value="elektr">Elektr</option></select>
+        </label>
+        <label>Norma (l/km) <input id="veh-norm" type="number" step="0.01" placeholder="0.35"></label>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" onclick="v5SaveVehicle()">💾 Saqlash</button></div>`);
+  };
+
+  window.v5SaveVehicle = async () => {
+    const number = $("#veh-number").value.trim();
+    if (!number) { toast("Raqam kerak", "error"); return; }
+    try {
+      const r = await apiPost("/vehicles", {
+        number, brand: $("#veh-brand").value.trim(),
+        capacity: parseFloat($("#veh-capacity").value || 0),
+        fuel_type: $("#veh-fuel").value,
+        fuel_norm_per_km: parseFloat($("#veh-norm").value || 0),
+      });
+      if (r.error) throw new Error(r.error);
+      toast("✅ Transport qo'shildi");
+      closeModal();
+      navigate("transport");
+    } catch (e) { toast(e.message, "error"); }
+  };
+
+  /* ================= 🤔 "NIMA BO'LSA?" TAHLILI (TZ E-bo'lim) ================= */
+  async function renderAnalytics() {
+    const root = $("#page-root") || $("#content");
+    root.innerHTML = `<div class="panel">
+      <div class="panel-header"><h3>🤔 "Nima bo'lsa?" tahlili</h3></div>
+      <div class="panel-body">
+        <p class="muted">Stsenariyni tanlang — tizim o'tgan 90 kunlik savdolar asosida prognoz beradi.</p>
+        <div class="form-grid">
+          <label>Stsenariy
+            <select id="v5-wifi-scenario">
+              <option value="price_down">📉 Narx pasayishi</option>
+              <option value="price_up">📈 Narx oshishi</option>
+              <option value="discount">🎁 Chegirma berish</option>
+            </select>
+          </label>
+          <label>Foiz <input id="v5-wifi-percent" type="number" value="5" min="0.1" max="90" step="0.5"></label>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" onclick="v5RunWhatIf()">🔮 Hisoblash</button></div>
+        <div id="v5-wifi-result" style="margin-top:14px"></div>
+      </div>
+    </div>`;
+  }
+
+  window.v5RunWhatIf = async () => {
+    const scenario = $("#v5-wifi-scenario").value;
+    const percent = parseFloat($("#v5-wifi-percent").value || 5);
+    try {
+      const r = await api(`/analytics/what-if?scenario=${scenario}&percent=${percent}`);
+      if (r.error) throw new Error(r.error);
+      const icon = Number(r.delta) >= 0 ? "📈" : "📉";
+      $("#v5-wifi-result").innerHTML = `<div class="card stat-card">
+        <h4>${esc(r.scenario_label)}</h4>
+        <p>📊 Bazaviy savdo: <b>${money(r.base_revenue)}</b> (${r.base_order_count} ta buyurtma)</p>
+        <p>${icon} Bashorat: <b>${money(r.projected_revenue)}</b></p>
+        <p class="${Number(r.delta) >= 0 ? "ok" : "err"}">O'zgarish: ${Number(r.delta).toLocaleString("uz-UZ")} so'm (${r.delta_percent}%)</p>
+        <p class="muted">ℹ️ ${esc(r.note)}</p>
+      </div>`;
+    } catch (e) { toast(e.message, "error"); }
+  };
+
+  /* ================= 📅 SMENA KALENDARI (TZ E-bo'lim) ================= */
+  async function renderSchedule() {
+    const root = $("#page-root") || $("#content");
+    root.innerHTML = `<div class="panel">
+      <div class="panel-header"><h3>📅 Xodimlar smenasi kalendari</h3></div>
+      <div class="panel-body" id="v5-schedule-body">Yuklanmoqda…</div>
+    </div>`;
+    try {
+      const r = await api("/work-schedule");
+      if (r.error) throw new Error(r.error);
+      const rows = (r.employees || []).map((e) => `<tr>
+        <td>${e.status === "faol" ? "🟢" : "🟡"} <b>${esc(e.full_name)}</b></td>
+        <td>${esc(e.role)}</td>
+        <td>${e.work_days} kun</td>
+        <td>${e.total_hours} soat</td>
+        <td>${e.overtime_hours} soat</td>
+      </tr>`).join("");
+      $("#v5-schedule-body").innerHTML = `<p class="muted">Oyi: <b>${esc(r.month)}</b></p>
+        <div class="table-wrap"><table class="table">
+        <thead><tr><th>Xodim</th><th>Rol</th><th>Ishlagan kun</th><th>Jami soat</th><th>Qo'shimcha</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5" class="empty">Ma'lumot yo'q</td></tr>`}</tbody></table></div>`;
+    } catch (e) { toast(e.message, "error"); $("#v5-schedule-body").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+  }
+
+  /* ================= ⏳ AMAL MUDDATI ESLATMASI (TZ 3.1/3.2) ================= */
+  async function renderExpiry() {
+    const root = $("#page-root") || $("#content");
+    root.innerHTML = `<div class="panel">
+      <div class="panel-header"><h3>⏳ Amal qilish muddati yaqinlashgan xom ashyolar</h3></div>
+      <div class="panel-body" id="v5-expiry-body">Yuklanmoqda…</div>
+    </div>`;
+    try {
+      const r = await api("/inventory/expiring?days=30");
+      if (r.error) throw new Error(r.error);
+      const items = r.items || [];
+      if (!items.length) {
+        $("#v5-expiry-body").innerHTML = `<p class="ok">✅ 30 kun ichida muddati tugaydigan xom ashyo yo'q.</p>`;
+        return;
+      }
+      $("#v5-expiry-body").innerHTML = `<div class="table-wrap"><table class="table">
+        <thead><tr><th>Xom ashyo</th><th>Partiya</th><th>Sertifikat</th><th>Amal muddati</th><th>Qoldiq</th><th>Holat</th></tr></thead>
+        <tbody>${items.map((it) => `<tr>
+          <td><b>${esc(it.name)}</b></td>
+          <td>${esc(it.batch_number || "-")}</td>
+          <td>${esc(it.certificate_number || "-")}</td>
+          <td>${esc((it.expiry_date || "").slice(0, 10))}</td>
+          <td>${(Number(it.current_stock) || 0).toLocaleString("uz-UZ")}</td>
+          <td>${it.status === "muddati_o'tgan" ? "🔴 Muddati o'tgan" : "🟡 " + it.days_left + " kun qoldi"}</td>
+        </tr>`).join("")}</tbody></table></div>`;
+    } catch (e) { toast(e.message, "error"); $("#v5-expiry-body").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+  }
+
   RENDERERS.sales = renderSales;
   RENDERERS.production = renderProduction;
   RENDERERS.deliveries = renderDeliveries;
   RENDERERS.returns = renderReturns;
   RENDERERS.cashshifts = renderCashShifts;
   RENDERERS.shoporders = renderShopOrders;
+  RENDERERS.transport = renderTransport;
+  RENDERERS.analytics = renderAnalytics;
+  RENDERERS.schedule = renderSchedule;
+  RENDERERS.expiry = renderExpiry;
 
   /* ---------- Delegatsiya: tugmalar (bindContentEvents'ga tegmasdan) ---------- */
   document.addEventListener("click", async (ev) => {

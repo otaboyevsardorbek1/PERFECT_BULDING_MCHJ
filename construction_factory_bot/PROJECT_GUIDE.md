@@ -875,6 +875,40 @@ DELETE /api/customers/{id}/prices/{product_id}
 3.9–3.15 (AI/IoT/Event Sourcing/Feature Flags/ChatOps/SLO/Multi-Cloud) va
 HPA/Spot kabi bulut bo'limlari — infratuzilma strategiyasi, roadmap'da.
 
+## 11. 🆕 v5.3 — "TIZIM MUKAMMALLIGI" qoldiq bo'shliqlari
+
+Spec'ning barcha bo'limlari (10 085 qator) yana bir bor to'liq audit qilindi;
+16 ta kelajak bo'limi (Gen AI, Edge, Blockchain, AR/VR, biometrik, avtonom
+dronlar, kvant, self-healing, DID, carbon, voice, predictive analytics,
+digital twins, low-code, kripto, ESG) bundan mustasno. Yopilgan bo'shliqlar:
+
+| TZ talabi | Amalga oshirish |
+| :--- | :--- |
+| **Transport vositalari** (ERD `vehicles`) | `vehicles` jadvali + `GET/POST/PUT/DELETE /api/vehicles`; `fuel_logs.vehicle_id`, `deliveries.vehicle_id`; bot "🚗 Transport" + web sahifa |
+| **Ortiqcha zaxira** (ERD `max_stock`) | `Product.max_stock`; `GET /api/products/over-stock` |
+| **Rangli ombor xaritasi** (B-bo'lim) | `GET /api/warehouses/fill-levels` — yashil/sariq/qizil to'liqlik |
+| **"Nima bo'lsa?" tahlili** (E-bo'lim) | `GET /api/analytics/what-if?scenario=price_down&percent=5` — 90 kunlik prognoz |
+| **Amal muddati eslatmasi** (3.1/3.2) | `GET /api/inventory/expiring?days=30` — yaqinlashgan/o'tgan xom ashyolar |
+| **Xodimlar smenasi kalendari** (E-bo'lim) | `GET /api/work-schedule?month=YYYY-MM` — kun/soat/qo'shimcha vaqt |
+| **Xodim ochiq operatsiyalari** (H-bo'lim) | `GET /api/employees/{id}/open-operations` — ishdan ketmoqchi xodim topshirig'i |
+| **Trening simulyatori** ("Eng muhim taklif") | Bot "🎓 Trening": 4 mavzu, 3 savoldan, izoh + SERTIFIKAT |
+
+Yangi modullar rol matritsasida: `vehicles` (direktor/haydovchi), `schedule`
+(direktor), `analytics` (direktor/buxgalter), `training` (barcha rollar).
+
+```
+GET    /api/vehicles
+POST   /api/vehicles             {number, brand, capacity, fuel_type, ...}
+PUT    /api/vehicles/{id}
+DELETE /api/vehicles/{id}
+GET    /api/products/over-stock
+GET    /api/warehouses/fill-levels
+GET    /api/inventory/expiring?days=30
+GET    /api/work-schedule?month=YYYY-MM
+GET    /api/employees/{id}/open-operations
+GET    /api/analytics/what-if?scenario=price_down&percent=5
+```
+
 ---
 
 ## 📝 Xulosa

@@ -372,6 +372,18 @@ def api_products_low_stock(min_stock: Optional[float] = None,
     return {"products": result}
 
 
+@router.get("/products/over-stock")
+def api_products_over_stock(db: Session = Depends(get_db),
+                            user: AuthUser = Depends(require_any_view_v5(["warehouse", "production"]))):
+    """TZ ERD: max_stock chegarasidan oshgan mahsulotlar (ortiqcha zaxira)."""
+    rows = crud_v5.list_products_over_max_stock(db)
+    return {"products": [
+        {**product_to_dict(r["product"]), "available_qty": r["available_qty"],
+         "max_stock": r["max_stock"]}
+        for r in rows
+    ]}
+
+
 @router.get("/products/top-selling")
 def api_products_top_selling(days: int = 30, limit: int = 10,
                              db: Session = Depends(get_db),
@@ -1012,6 +1024,13 @@ def api_inventory_history(item_type: Optional[str] = None, item_id: Optional[int
     """Spec: GET /api/inventory/history — tovar harakat tarixi."""
     return {"history": crud_v5.get_inventory_history(
         db, item_type=item_type, item_id=item_id, limit=limit)}
+
+
+@router.get("/inventory/expiring")
+def api_inventory_expiring(days: int = 30, db: Session = Depends(get_db),
+                           user: AuthUser = Depends(require_any_view_v5(["warehouse", "production"]))):
+    """TZ 3.1/3.2: amal qilish muddati yaqinlashgan yoki o'tgan xom ashyolar."""
+    return {"items": crud_v5.get_expiring_materials(db, days=days)}
 
 
 @router.get("/inventory/{product_id}")

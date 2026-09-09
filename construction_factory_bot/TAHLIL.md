@@ -279,6 +279,41 @@ berish mumkin.
 - Barcha modullar import toza
 - Eski DB avtomatik migratsiya qilinadi (ustunlar + yangi `customer_prices` jadvali)
 
+## 12. 🚗 v5.3 — Qolgan TZ bo'shliqlari: Transport, max_stock, what-if, amal muddati, smena kalendari, ochiq operatsiyalar, trening
+
+> Qayta to'liq audit: `construction_factory_bot.md` (10 085 qator) ning
+> "16 ta kelajak bo'limi" (Gen AI, Edge, Blockchain, AR/VR, Biometrik,
+> Avtonom, Kvant, Self-healing, DID, Carbon, Voice, Predictive, Digital
+> Twins, Low-code, Kripto, ESG) DAN TASHQARI barcha bo'limlari kod bilan
+> solishtirildi; oxirgi aniqlangan 7 ta bo'shliq yopildi.
+
+| TZ talabi | Nima qo'shildi | Qayerda |
+| :--- | :--- | :--- |
+| **Transport vositalari** (ERD: `vehicles` jadvali — raqam, haydovchi, sig'im, yoqilg'i turi) | Yangi `vehicles` jadvali + CRUD (`GET/POST/PUT/DELETE /api/vehicles`); `fuel_logs.vehicle_id` va `deliveries.vehicle_id` bog'lanishlari; bot'da "🚗 Transport" menyusi (direktor qo'shadi, haydovchi ko'radi) + web "🚗 Transport" sahifasi | `models`, `crud_v5`, `api_v53`, `handlers/training.py`, `app_v5.js` |
+| **Ortiqcha zaxira** (ERD: `max_stock`; "Rangli ombor xaritasi") | `Product.max_stock` ustuni; `GET /api/products/over-stock` (chegaradan oshganlar); `GET /api/warehouses/fill-levels` — yashil/sariq/qizil to'liqlik darajasi | `models`, `crud_v5`, `api_v53`, `app_v5.js` |
+| **"Nima bo'lsa?" tahlili** (E-bo'lim: narx 5% tushsa sotuv qanchaga oshadi) | `GET /api/analytics/what-if` (price_down/price_up/discount, o'tgan 90 kun asosida konservativ prognoz); bot "🤔 Nima bo'lsa?" + web sahifa | `crud_v5`, `api_v53`, `handlers/training.py`, `app_v5.js` |
+| **Amal muddati eslatmasi** (3.1/3.2: amal qilish muddati) | `GET /api/inventory/expiring?days=30` — yaqinlashgan/o'tgan xom ashyolar; bot "⏳ Amal muddati" + web sahifa | `crud_v5`, `api_v53`, `handlers/training.py`, `app_v5.js` |
+| **Xodimlar smenasi kalendari** (E-bo'lim) | `GET /api/work-schedule?month=YYYY-MM` — kunlar/soatlar/qo'shimcha vaqt/ta'til; bot "📅 Smena kalendari" + web sahifa | `crud_v5`, `api_v53`, `handlers/training.py`, `app_v5.js` |
+| **Xodim ishdan ketmoqchi — ochiq operatsiyalar** (H-bo'lim) | `GET /api/employees/{id}/open-operations` — tugallanmagan nasiya, faol yetkazib berish, ochiq yig'ish varaqalari, jarayondagi ishlab chiqarish, ochiq kassa smenasi | `crud_v5`, `api_v53` |
+| **Trening simulyatori** ("Eng muhim taklif": 15 daqiqalik interaktiv trening, sertifikat) | Bot'da "🎓 Trening" — 4 mavzu (sotuv, ombor, yetkazib berish, xavfsizlik), har birida 3 savol, izohlar va yakunda SERTIFIKAT xabari | `handlers/training.py`, `main_menu.py` |
+
+### 12.1 Natija
+
+- **636 ta test o'tdi** (621 + 15 yangi `tests/test_api/test_v53.py`) — regressiya yo'q
+- Barcha modullar import toza, `node --check` toza
+- Eski DB avtomatik migratsiya qilinadi: `vehicles` jadvali, `products.max_stock`,
+  `fuel_logs.vehicle_id`, `deliveries.vehicle_id`
+- Rol matritsasiga yangi modullar kiritildi: `vehicles` (direktor/haydovchi),
+  `schedule` (direktor), `analytics` (direktor/buxgalter), `training` (barcha)
+
+### 12.2 Roadmap (funksional emas — arxitektura takliflari)
+
+Spec'dagi "16 ta kelajak bo'limi" (Gen AI, Edge, Blockchain, AR/VR, biometrik,
+avtonom dronlar, kvant xavfsizligi, self-healing, DID, carbon, voice commerce,
+predictive analytics, digital twins, low-code, kripto, ESG) va bulut qismlari
+(K8s, Terraform, Helm, ArgoCD, Istio, OPA, monitoring) — infratuzilma/strategiya
+tavsiyalari; ular `PROJECT_GUIDE.md` "Kelajak" ro'yxatida saqlanadi.
+
 ### 11.2 Roadmap (funksional emas — arxitektura takliflari)
 
 Yangi 3-bo'limning 3.9–3.15 qismlari (AI/ML bashoratlar, IoT sensorlar,

@@ -111,49 +111,49 @@ EMPLOYEE_POSITIONS = {
 ROLES = {
     "direktor": {
         "label": "👑 Direktor",
-        "can_view": ["production", "warehouse", "sales", "crm", "supplier", "stock_ops", "finance", "reports", "employees", "admin", "sms", "ai", "delivery", "cash_shift", "fuel", "expenses", "picking", "security", "ratings"],
-        "can_edit": ["production", "warehouse", "sales", "crm", "supplier", "stock_ops", "finance", "reports", "employees", "admin", "sms", "ai", "delivery", "cash_shift", "fuel", "expenses", "picking", "security", "ratings"],
+        "can_view": ["production", "warehouse", "sales", "crm", "supplier", "stock_ops", "finance", "reports", "employees", "admin", "sms", "ai", "delivery", "cash_shift", "fuel", "expenses", "picking", "security", "ratings", "vehicles", "schedule", "analytics", "training"],
+        "can_edit": ["production", "warehouse", "sales", "crm", "supplier", "stock_ops", "finance", "reports", "employees", "admin", "sms", "ai", "delivery", "cash_shift", "fuel", "expenses", "picking", "security", "ratings", "vehicles", "schedule", "analytics"],
         "see_cost": True,
         "discount_limit": 100,
     },
     "sotuvchi": {
         "label": "🛒 Sotuvchi",
-        "can_view": ["sales", "crm", "warehouse", "stock_ops", "delivery"],
+        "can_view": ["sales", "crm", "warehouse", "stock_ops", "delivery", "training"],
         "can_edit": ["sales", "crm", "stock_ops", "delivery"],
         "see_cost": False,  # Tannarxni ko'ra olmaydi!
         "discount_limit": 5,  # 5% dan ortiq chegirma bera olmaydi
     },
     "kassir": {
         "label": "💵 Kassir",
-        "can_view": ["sales", "cash_shift"],
+        "can_view": ["sales", "cash_shift", "training"],
         "can_edit": ["sales", "cash_shift"],
         "see_cost": False,
         "discount_limit": 0,
     },
     "omborchi": {
         "label": "📦 Omborchi",
-        "can_view": ["warehouse", "supplier", "stock_ops", "picking"],
+        "can_view": ["warehouse", "supplier", "stock_ops", "picking", "training"],
         "can_edit": ["warehouse", "supplier", "stock_ops", "picking"],
         "see_cost": False,  # Narxlarni ko'ra olmaydi
         "discount_limit": 0,
     },
     "haydovchi": {
         "label": "🚚 Haydovchi",
-        "can_view": ["warehouse", "stock_ops", "delivery", "fuel", "expenses", "picking"],
+        "can_view": ["warehouse", "stock_ops", "delivery", "fuel", "expenses", "picking", "vehicles", "training"],
         "can_edit": ["delivery", "fuel", "expenses"],
         "see_cost": False,
         "discount_limit": 0,
     },
     "buxgalter": {
         "label": "🧮 Buxgalter",
-        "can_view": ["finance", "reports", "crm", "warehouse", "cash_shift", "fuel", "expenses"],
+        "can_view": ["finance", "reports", "crm", "warehouse", "cash_shift", "fuel", "expenses", "analytics", "training"],
         "can_edit": ["finance", "expenses"],
         "see_cost": True,
         "discount_limit": 0,
     },
     "ishchi": {
         "label": "🔧 Ishchi",
-        "can_view": ["production", "warehouse"],
+        "can_view": ["production", "warehouse", "training"],
         "can_edit": [],
         "see_cost": False,
         "discount_limit": 0,
@@ -162,7 +162,7 @@ ROLES = {
         # TZ rol matritsasi: "Yuklovchi — faqat o'ziga biriktirilgan ortish
         # varaqalari (yig'ish/ortish) va buyurtma holati"
         "label": "🏗️ Yuklovchi",
-        "can_view": ["warehouse", "stock_ops", "picking"],
+        "can_view": ["warehouse", "stock_ops", "picking", "training"],
         "can_edit": ["picking"],
         "see_cost": False,
         "discount_limit": 0,
