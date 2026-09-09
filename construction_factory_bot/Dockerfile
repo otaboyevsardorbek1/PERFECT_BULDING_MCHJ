@@ -15,6 +15,10 @@
 # ============================================================
 FROM python:3.11-slim
 
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
 # Node.js (web frontend uchun) — bookworm repodan
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -30,8 +34,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Loyiha fayllari
 COPY . .
 
-# Ishchi papkalar
-RUN mkdir -p logs reports/excel reports/charts reports/pdf backups
+# Ishchi papkalar (config.py ularni avtomatik yaratadi ham)
+RUN mkdir -p logs reports/excel reports/charts backups static/uploads
 
 # API porti (FastAPI) va web porti (Node.js)
 EXPOSE 8000 3000

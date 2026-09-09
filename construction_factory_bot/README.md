@@ -326,22 +326,57 @@ TZ ERD `deliveries.vehicle_id` bo'yicha:
 - `POST /api/deliveries` endi `vehicle_id` qabul qiladi; ro'yxat javobida
   `vehicle_number` ko'rinadi. Web formada ham transport select bor.
 
-## 🐳 Docker va CI/CD (TZ: Deploy bo'limi)
+## 🐳 Docker'da to'liq ishga tushirish (TZ: Deploy bo'limi)
+
+### 1) Tayyorlash
 
 ```bash
 cd construction_factory_bot
-cp .env.example .env          # BOT_TOKEN, ADMIN_IDS kiriting
-
-docker-compose up -d --build
-#   api  -> http://localhost:8000   (FastAPI)
-#   web  -> http://localhost:3000   (Node.js frontend, /api -> api:8000)
-#   bot  -> Telegram bot (polling)
+cp .env.example .env
+# .env ichida kamida quyidagilarni kiriting:
+#   BOT_TOKEN=<Telegram bot tokeni>   (@BotFather dan)
+#   ADMIN_IDS=<sizning telegram ID>   (masalan 123456789)
+#   WEB_ADMIN_PASSWORD=<web dashboard admin paroli>  (ixtiyoriy, birinchi ishga tushirish)
 ```
 
-- `Dockerfile` — Python 3.11 + Node.js 20 (yagona image).
-- `docker-compose.yml` — 3 xizmat: api / web / bot; SQLite `database/`,
-  backups, logs, reports papkalari bind-mount bilan saqlanadi.
-- `.github/workflows/ci.yml` — har push/PR da: pytest (568+ test),
+### 2) Build va ishga tushirish
+
+```bash
+docker compose up -d --build
+```
+
+### 3) Xizmatlar
+
+| Xizmat | Manzil | Vazifasi |
+| :--- | :--- | :--- |
+| **api** | http://localhost:8000 | FastAPI REST API (`/health` da holatini tekshirish mumkin) |
+| **web** | http://localhost:3000 | Node.js dashboard (brauzerda ochasiz, `/api` avtomatik backend'ga yo'naltiriladi) |
+| **bot** | Telegram | Aiogram bot (polling, login/parol + 2FA bilan) |
+
+### 4) Foydali buyruqlar
+
+```bash
+docker compose ps                    # holatlar
+curl http://localhost:8000/health    # API holati
+curl http://localhost:3000/health    # web holati
+docker compose logs -f bot           # bot loglari
+docker compose down                  # to'xtatish (ma'lumotlar saqlanadi)
+docker compose down -v               # to'liq o'chirish (volume'lar bilan)
+```
+
+### 5) Ma'lumotlar qayerda saqlanadi?
+
+- SQLite: `database/construction.db` (host'da) — konteyner qayta yaratilsa ham yo'qolmaydi
+- `backups/`, `logs/`, `reports/`, `static/uploads/` — xuddi shunday host'da saqlanadi
+
+### Texnik
+
+- `Dockerfile` — Python 3.11 + Node.js 20 (yagona image, `.dockerignore` bilan
+  kichik va xavfsiz: `.env`, DB, loglar image'ga tushmaydi).
+- `docker-compose.yml` — 3 xizmat: api / web / bot; api va web uchun
+  `healthcheck`; `restart: unless-stopped` — tizim qayta ishga tushsa avtomatik
+  tiklanadi.
+- `.github/workflows/ci.yml` — har push/PR da: pytest (600+ test),
   Node.js sintaksis tekshiruvi va Docker build.
 
 ---

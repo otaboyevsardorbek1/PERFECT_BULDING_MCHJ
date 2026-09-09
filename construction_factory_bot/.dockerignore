@@ -1,0 +1,43 @@
+# ============================================================
+# .dockerignore — image hajmini kichik va xavfsiz saqlaydi
+# (maxfiy fayllar, ma'lumotlar va vaqtinchalik narsalar build'ga tushmaydi)
+# ============================================================
+
+# Git va CI
+.git
+.gitignore
+.github
+
+# Maxfiy fayllar (konteyner ichiga tushmasligi kerak!)
+.env
+.env.*
+!.env.example
+.web_secret
+
+# Python vaqtinchalik
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Real ma'lumotlar (volume orqali ulanadi)
+database/*.db
+database/*.db-journal
+database/*.sqlite
+backups/
+logs/
+reports/
+static/uploads/
+
+# Testlar (image'da kerak emas)
+tests/
+
+# Hujjatlar va boshqa
+*.md
+shablon_info/
+run.sh
+status.sh
+stop.sh

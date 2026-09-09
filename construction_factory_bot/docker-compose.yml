@@ -1,38 +1,47 @@
 # ============================================================
 # 🏗️ Qurilish Korxonasi — docker-compose (TZ: Deploy bo'limi)
 #
-#   cp .env.example .env    # BOT_TOKEN, ADMIN_IDS va boshqa kalitlar
-#   docker-compose up -d --build
+#   1) cp .env.example .env     # BOT_TOKEN, ADMIN_IDS va boshqa kalitlar
+#   2) docker compose up -d --build
 #
 # Xizmatlar:
-#   api   -> FastAPI REST API  (http://localhost:8000)
+#   api   -> FastAPI REST API  (http://localhost:8000, /health tekshiruvi bilan)
 #   web   -> Node.js frontend  (http://localhost:3000)  /api -> api:8000
 #   bot   -> Telegram bot (aiogram polling)
 #
 # Ma'lumotlar (SQLite construction.db, backups, logs, reports) shared volume'da
 # saqlanadi — konteyner qayta yaratilsa ham yo'qolmaydi.
 # ============================================================
-version: "3.8"
 
 services:
   api:
     build: .
-    restart: always
+    image: construction-factory-bot:latest
+    restart: unless-stopped
     command: python -m uvicorn dashboard.app:app --host 0.0.0.0 --port 8000
     env_file: .env
     environment:
       - SQLITE_DB_PATH=database/construction.db
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./database:/app/database
       - ./backups:/app/backups
       - ./logs:/app/logs
       - ./reports:/app/reports
+      - ./static/uploads:/app/static/uploads
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   web:
     build: .
-    restart: always
+    image: construction-factory-bot:latest
+    restart: unless-stopped
     command: node web/server.js
     environment:
       - PORT=3000
@@ -41,18 +50,27 @@ services:
       - api
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   bot:
     build: .
-    restart: always
+    image: construction-factory-bot:latest
+    restart: unless-stopped
     command: python main.py
     env_file: .env
     environment:
       - SQLITE_DB_PATH=database/construction.db
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./database:/app/database
       - ./backups:/app/backups
       - ./logs:/app/logs
       - ./reports:/app/reports
+      - ./static/uploads:/app/static/uploads
     depends_on:
       - api

@@ -150,6 +150,12 @@ from dashboard.shop import router as shop_router
 app.include_router(shop_router)
 
 
+@app.get("/health")
+def health_check():
+    """Docker healthcheck uchun servis holati"""
+    return {"status": "ok", "service": "qurilish-api", "time": datetime.utcnow().isoformat()}
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_json_handler(request: Request, exc: HTTPException):
     """HTTP xatolarni yagona JSON shaklga keltirish: {"error": ...}"""
