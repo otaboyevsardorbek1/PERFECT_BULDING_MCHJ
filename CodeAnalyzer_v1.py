@@ -19,10 +19,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import cpu_count
 from collections import defaultdict
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# PLATFORMA ANIQLASH VA KUTUBXONALARNI BOSHQARISH
-# ═══════════════════════════════════════════════════════════════════════════════
 
+
+    
 def detect_platform() -> Dict[str, Any]:
     """Ishlayotgan platformani aniqlash"""
     system = platform.system().lower()
