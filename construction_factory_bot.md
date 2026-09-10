@@ -10083,3 +10083,120 @@ Mana sizga **real hayotiy reja** (9-12 oy):
 | **3-bosqich (Enterprise)** | 3-4 oy | **Kubernetes, Istio, OPA, Monitoring (Prometheus/Grafana), GitOps (ArgoCD), DR (cross-region).** | Ishonchlilik va xavfsizlikni oshirish. |
 | **4-bosqich (Intellektual)** | 2-3 oy | **AI/ML (tavsiyalar, prognoz, chatbot), IoT (sensorlar, vaznli tarozi), React Native mobil ilovalar.** | Raqobatbardoshlik va avtomatlashtirish. |
 | **5-bosqich (Kelajak)** | 1+ yil | **Gen AI agentlar, AR/VR, BlockChain, Digital Twins, avtonom dronlar.** | Bozorda yetakchilik. |
+
+# YANGI TIZIM UCHUN TALAB VA TAVSIYALAR  
+*(TZ v.5.0 tahlili asosida)*
+
+Quyida qurilish materiallari savdo va ishlab chiqarish tizimini **dunyodagi yetakchi CRM darajasiga** olib chiqish uchun mavjud kamchiliklar, ularga qo‘yiladigan talablar va aniq tavsiyalar keltirilgan.
+
+---
+
+## 1. UMUMIY XULOSA
+
+TZ v.5.0 funksional jihatdan juda kuchli (9.5/10), ammo **multi-tenant, xalqaro miqyos, marketing avtomatizatsiyasi, mijozlar portali, HRM va platforma ekotizimi** kabi yo‘nalishlarda yetishmovchiliklar mavjud. Quyidagi talab va tavsiyalar ushbu kamchiliklarni bartaraf etib, tizimni **global CRM** darajasiga ko‘taradi.
+
+---
+
+## 2. KAMCHILIKLAR, TALABLAR VA TAVSIYALAR
+
+| # | Kamchilik | Talab | Tavsiya | Prioritet |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | Multi-tenant arxitekturasi yo‘q | Ko‘plab korxonalar bitta tizimda alohida ishlashi | PostgreSQL schemas + RLS, har bir tenant uchun subdomain, sozlamalar, valyuta | **Critical** |
+| 2 | Xalqaro miqyos yo‘q | 10+ til, 20+ valyuta, mahalliy soliq va to‘lov tizimlari | i18n, react-i18next, Currency API, TaxJar, Stripe Connect | **Critical** |
+| 3 | Marketing avtomatizatsiyasi qisman | Email, SMS, Social, WhatsApp orqali omnichannel kampaniyalar | SendGrid, Twilio, Meta API, WhatsApp Business API | **High** |
+| 4 | Mijozlar portali yo‘q | Mijozlar o‘z buyurtmalari, qarzlari, bonuslarini ko‘rishi | React asosida shaxsiy kabinet, Community Cloud | **High** |
+| 5 | Knowledge base va FAQ yo‘q | Maqolalar, video darsliklar, tez-tez so‘raladigan savollar | Zendesk yoki Confluence integratsiyasi | **Medium** |
+| 6 | Feedback va feature request yo‘q | Mijozlar yangi funksiyalarni taklif qilishi va ovoz berishi | Canny yoki UserVoice integratsiyasi | **Medium** |
+| 7 | Gamification yo‘q | Mijozlarni ball, yulduz, darajalar bilan rag‘batlantirish | Badgeville yoki Bunchball | **Low** |
+| 8 | Live chat / Cobrowse yo‘q | Real vaqtda mijoz bilan muloqot va ekranni birgalikda ko‘rish | Intercom, Zendesk Chat, Surfly | **High** |
+| 9 | Social listening yo‘q | Ijtimoiy tarmoqlarda brend haqida fikrlarni kuzatish | Brandwatch, Hootsuite, Mention | **Medium** |
+| 10 | HRM moduli yo‘q | Xodimlar portali, performance review, LMS, recruitment | BambooHR, Moodle, Lever | **High** |
+| 11 | AppStore / Plugin ekotizimi yo‘q | Uchinchi tomon dasturchilari ilova yaratishi va sotishi | API Gateway + SDK + OAuth, Developer portal | **High** |
+| 12 | SOC 2 / ISO 27001 sertifikatlari yo‘q | Xalqaro xavfsizlik standartlariga muvofiqlik | Audit o‘tkazish, sertifikatlash | **Critical** |
+| 13 | SSO yo‘q | Kompaniya ichidagi tizimlar bilan yagona kirish | SAML, OAuth2, LDAP | **High** |
+| 14 | Bug bounty yo‘q | Xatolarni topgan dasturchilarga mukofot | Bugcrowd, HackerOne | **Low** |
+| 15 | Penetration testing yo‘q | Doimiy xavfsizlik sinovlari | OWASP ZAP, Kali Linux | **High** |
+| 16 | Subscription & recurring billing yo‘q | Obuna asosidagi xizmatlar uchun to‘lov | Stripe Billing, Recurly | **Medium** |
+| 17 | Revenue recognition yo‘q | Daromadni xalqaro standartlar bo‘yicha hisobga olish | Sage Intacct, NetSuite | **Medium** |
+| 18 | Multi-entity accounting yo‘q | Bir nechta yuridik shaxslar uchun alohida buxgalteriya | NetSuite, QuickBooks | **Medium** |
+| 19 | Avans AI modullari cheklangan | Lead scoring, churn prediction, next best action, sentiment | scikit-learn, XGBoost, BERT | **High** |
+| 20 | Integratsiyalar cheklangan | GraphQL, Webhooks, ETL, SDK, Zapier | Apollo, Kafka, Airbyte, OpenAPI | **High** |
+| 21 | Data governance yo‘q | Maʼlumotlar sifati, boyitish, maskalash | Data catalog, Great Expectations | **Medium** |
+| 22 | Performance monitoring cheklangan | Real vaqt metrikalar, biznes KPI lar | Prometheus + Grafana + biznes dashboard | **High** |
+| 23 | Chaos engineering yo‘q | Tizimning xatolarga chidamliligini sinash | Chaos Mesh, Litmus | **Medium** |
+| 24 | Cost optimization to‘liq emas | Xarajatlarni doimiy nazorat qilish | Kubecost, OpenCost, VPA | **Medium** |
+| 25 | Foydalanuvchi tajribasi (UX) yetarli emas | Barcha rollar uchun qulay interfeys | UX research, prototiplash, A/B test | **High** |
+
+---
+
+## 3. KENGAYTIRILGAN TAVSIYALAR
+
+### 3.1. Multi-tenant arxitektura
+- **Talab:** Har bir tenant uchun alohida maʼlumotlar bazasi sxemasi, subdomain, sozlamalar, valyuta va til.
+- **Tavsiya:** PostgreSQL RLS (Row-Level Security) va schemas asosida qurish. Har bir tenant uchun `tenant_id` bo‘yicha filtrlash. API Gateway da `X-Tenant-ID` header orqali marshrutlash.
+
+### 3.2. Xalqaro miqyos (Globalization)
+- **Talab:** 10+ til, 20+ valyuta, mahalliy soliq va to‘lov tizimlari.
+- **Tavsiya:** i18n va react-i18next orqali ko‘p tilli interfeys. Currency API orqali real vaqt valyuta kurslari. TaxJar yoki Avalara orqali soliq hisoblash. Stripe Connect, PayPal, Alipay, WeChat Pay integratsiyasi.
+
+### 3.3. Marketing avtomatizatsiyasi
+- **Talab:** Email, SMS, Telegram, WhatsApp, Instagram, Facebook orqali yagona kampaniyalar.
+- **Tavsiya:** SendGrid (email), Twilio (SMS), Meta API (Instagram/Facebook), WhatsApp Business API. Lead generation uchun Clearbit, Leadfeeder. A/B testing uchun Optimizely.
+
+### 3.4. Mijozlar portali va jamiyat
+- **Talab:** Mijozlar o‘z hisob-kitoblarini, buyurtmalarini, qarzlarini ko‘rishi; forum va feedback.
+- **Tavsiya:** React asosida shaxsiy kabinet. Knowledge base uchun Zendesk yoki Confluence. Forum uchun Discourse. Feedback uchun Canny.
+
+### 3.5. HRM moduli
+- **Talab:** Xodimlar portali, performance review, LMS, recruitment, time attendance.
+- **Tavsiya:** BambooHR yoki Gusto integratsiyasi. LMS uchun Moodle yoki TalentLMS. Recruitment uchun Lever yoki Greenhouse.
+
+### 3.6. AppStore va Developer portal
+- **Talab:** Uchinchi tomon dasturchilari ilova yaratishi, sotishi va integratsiya qilishi.
+- **Tavsiya:** API Gateway + SDK (JavaScript, Python, Java) + OAuth2. Developer portal uchun Swagger, Postman, ReadMe. AppStore uchun to‘lov tizimi va reyting.
+
+### 3.7. Xavfsizlik va compliance
+- **Talab:** SOC 2, ISO 27001, GDPR, CCPA, SSO, bug bounty, penetration testing.
+- **Tavsiya:** Audit o‘tkazish va sertifikatlash. SSO uchun SAML, OAuth2, LDAP. Bug bounty uchun HackerOne. Penetration testing uchun OWASP ZAP.
+
+### 3.8. Avans AI va analitika
+- **Talab:** Lead scoring, churn prediction, next best action, sentiment analysis, conversational AI.
+- **Tavsiya:** scikit-learn, XGBoost, BERT, RAG, LangChain. Har bir model uchun MLflow bilan experiment tracking.
+
+### 3.9. Integratsiyalar va API ekotizimi
+- **Talab:** GraphQL, REST, WebSocket, Webhooks, ETL, SDK, Zapier.
+- **Tavsiya:** Apollo (GraphQL), Express (REST), Socket.io (WebSocket). Webhooks uchun Kafka. ETL uchun Airbyte yoki Fivetran. SDK uchun OpenAPI Generator.
+
+### 3.10. Monitoring va observability
+- **Talab:** Metrikalar, loglar, tracing, biznes KPI lar.
+- **Tavsiya:** Prometheus + Grafana + Loki + Tempo + Kiali. Biznes dashboard uchun maxsus panellar.
+
+### 3.11. Performance va scalability
+- **Talab:** 1000+ RPS, p95 < 200ms, gorizontal va vertikal skeyling.
+- **Tavsiya:** Redis kesh, Elasticsearch, read replicas, HPA, Cluster Autoscaler.
+
+### 3.12. Disaster Recovery
+- **Talab:** RPO ≤ 1 soat, RTO ≤ 4 soat.
+- **Tavsiya:** Cross-region S3, Velero, RDS Multi-AZ. Har oyda chaos testing.
+
+### 3.13. Foydalanuvchi tajribasi (UX)
+- **Talab:** Barcha rollar uchun qulay, tez va intuitiv interfeys.
+- **Tavsiya:** UX research, prototiplash, A/B test. Har bir rol uchun alohida dizayn.
+
+---
+
+## 4. AMALGA OSHIRISH BOSQICHLARI
+
+| Bosqich | Vaqt | Asosiy vazifalar | Natija |
+| :--- | :--- | :--- | :--- |
+| **1-bosqich** | 9–12 oy | TZ v.5.0 ni to‘liq amalga oshirish | O‘zbekiston bozorida yetakchi |
+| **2-bosqich** | 6–9 oy | Multi-tenant, Marketing, Xalqaro miqyos | MDH va xalqaro bozorga chiqish |
+| **3-bosqich** | 6–9 oy | AppStore, Developer portal, Mijozlar jamiyati, Avans AI | Dunyodagi 1-qurilish CRM |
+
+---
+
+## 5. XULOSA
+
+Yuqoridagi talab va tavsiyalar asosida tizimni takomillashtirish orqali siz **qurilish materiallari sohasida dunyodagi eng ilg‘or CRM platformasini** yaratishingiz mumkin. Bu tizim Salesforce, HubSpot va Microsoft Dynamics 365 kabi yetakchilar bilan raqobatlasha oladi va **vertikal CRM** sifatida **dunyoda 1-o‘rinni** egallaydi.
+
+**Muvaffaqiyat tilayman!** 🚀🏗️🌍
