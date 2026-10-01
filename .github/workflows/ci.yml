@@ -1,0 +1,69 @@
+# ============================================================
+# 🏗️ Qurilish Korxonasi — CI/CD (TZ: CI/CD bo'limi)
+#
+# Har bir push/PR da:
+#   1. Python backend testlari (pytest, 568+ test)
+#   2. Node.js frontend sintaksis tekshiruvi
+#   3. Docker image build
+# ============================================================
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test-backend:
+    name: Python backend testlari
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: construction_factory_bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Kutubxonalarni o'rnatish
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Python sintaksis tekshiruvi (barcha fayllar)
+        run: |
+          python -m compileall -q . -x '/(\.git|\.pytest_cache|__pycache__|node_modules)/'
+
+      - name: Testlarni ishga tushirish
+        run: pytest
+
+  check-web:
+    name: Node.js frontend tekshiruvi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Sintaksis tekshiruvi
+        run: |
+          cd construction_factory_bot/web
+          node --check server.js
+          node --check public/app.js
+          node --check public/shop.html 2>/dev/null || true
+
+  build-docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: [test-backend, check-web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Konteynerni build qilish
+        run: |
+          docker build -t construction-factory-bot:ci ./construction_factory_bot

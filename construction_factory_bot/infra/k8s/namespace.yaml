@@ -1,0 +1,12 @@
+# ============================================================
+# Qurilish Materiallari Korxonasi — Production Namespace
+# ============================================================
+# Istio service mesh integratsiyasi bilan
+# TZ: "Service Mesh (Istio) — xizmatlararo aloqani boshqarish"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: qurilish-prod
+  labels:
+    app.kubernetes.io/part-of: qurilish-factory
+    istio-injection: enabled  # Istio sidecar avtomatik inject

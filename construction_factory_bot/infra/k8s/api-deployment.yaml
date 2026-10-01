@@ -1,0 +1,166 @@
+# ============================================================
+# FastAPI Backend — Deployment + Service + HPA
+# ============================================================
+# TZ: "API latensiyasi p95 < 200 ms, 1000+ so'rov/sek"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qurilish-api
+  namespace: qurilish-prod
+  labels:
+    app: qurilish-api
+    version: v5.5
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: qurilish-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: qurilish-api
+        version: v5.5
+        component: backend
+    spec:
+      serviceAccountName: qurilish-api
+      containers:
+      - name: api
+        image: qurilish-factory/api:latest
+        ports:
+        - containerPort: 8000
+          protocol: TCP
+          name: http
+        env:
+        - name: USE_POSTGRESQL
+          value: "true"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: host
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: password
+        - name: API_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-api-secrets
+              key: secret-key
+        - name: BACKUP_ENCRYPTION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-backup-secrets
+              key: encryption-password
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: db-data
+          mountPath: /app/database
+        - name: backups
+          mountPath: /app/backups
+      volumes:
+      - name: db-data
+        persistentVolumeClaim:
+          claimName: qurilish-db-pvc
+      - name: backups
+        persistentVolumeClaim:
+          claimName: qurilish-backups-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qurilish-api
+  namespace: qurilish-prod
+  labels:
+    app: qurilish-api
+spec:
+  selector:
+    app: qurilish-api
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+# TZ: "Vertikal va gorizontal skeyling — HPA, Cluster Autoscaler"
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: qurilish-api-hpa
+  namespace: qurilish-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: qurilish-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 120
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qurilish-api
+  namespace: qurilish-prod

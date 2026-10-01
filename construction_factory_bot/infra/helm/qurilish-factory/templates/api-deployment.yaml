@@ -1,0 +1,94 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qurilish.fullname" . }}-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "qurilish.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qurilish.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "qurilish.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+      - name: api
+        image: {{ include "qurilish.image" .Values.api.image . }}
+        ports:
+        - containerPort: 8000
+          protocol: TCP
+          name: http
+        env:
+        - name: USE_POSTGRESQL
+          value: "true"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: host
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: password
+        - name: API_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.apiSecret }}
+              key: secret-key
+        - name: BACKUP_ENCRYPTION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.backupSecret }}
+              key: encryption-password
+        resources:
+          {{- toYaml .Values.api.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.api.healthcheck.path }}
+            port: 8000
+          initialDelaySeconds: {{ .Values.api.healthcheck.initialDelaySeconds }}
+          periodSeconds: {{ .Values.api.healthcheck.periodSeconds }}
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.api.healthcheck.path }}
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: db-data
+          mountPath: /app/database
+        - name: backups
+          mountPath: /app/backups
+      volumes:
+      - name: db-data
+        persistentVolumeClaim:
+          claimName: {{ include "qurilish.fullname" . }}-db-pvc
+      - name: backups
+        persistentVolumeClaim:
+          claimName: {{ include "qurilish.fullname" . }}-backups-pvc
+{{- end }}

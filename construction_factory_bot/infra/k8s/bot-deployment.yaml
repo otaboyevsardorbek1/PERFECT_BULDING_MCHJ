@@ -1,0 +1,81 @@
+# ============================================================
+# Telegram Bot (Aiogram) — Deployment
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qurilish-bot
+  namespace: qurilish-prod
+  labels:
+    app: qurilish-bot
+    version: v5.5
+    component: bot
+spec:
+  replicas: 1  # Bot faqat bitta instance (polling)
+  selector:
+    matchLabels:
+      app: qurilish-bot
+  template:
+    metadata:
+      labels:
+        app: qurilish-bot
+        version: v5.5
+        component: bot
+    spec:
+      serviceAccountName: qurilish-bot
+      containers:
+      - name: bot
+        image: qurilish-factory/bot:latest
+        command: ["python", "main.py"]
+        env:
+        - name: BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-bot-secrets
+              key: bot-token
+        - name: ADMIN_IDS
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-bot-secrets
+              key: admin-ids
+        - name: USE_POSTGRESQL
+          value: "true"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: host
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qurilish-bot
+  namespace: qurilish-prod

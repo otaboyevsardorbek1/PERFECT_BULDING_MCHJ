@@ -1,0 +1,79 @@
+# ============================================================
+# Istio VirtualService — Trafigik boshqaruvi
+# ============================================================
+# TZ: "Service Mesh (Istio) — traffic management, load balancing"
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: qurilish-api
+  namespace: qurilish-prod
+spec:
+  hosts:
+  - qurilish-api
+  http:
+  # 1. Asosiy marshrut (90% trafigik)
+  - match:
+    - uri:
+        prefix: /api
+    route:
+    - destination:
+        host: qurilish-api
+        subset: stable
+      weight: 90
+    # Canary deploy uchun (10% trafigik → yangi versiya)
+    - destination:
+        host: qurilish-api
+        subset: canary
+      weight: 10
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+      retryOn: 5xx,reset,connect-failure
+  # 2. Web dashboard uchun (yuklamani taqsimlash)
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: qurilish-api
+        subset: stable
+      weight: 100
+    timeout: 15s
+---
+# ============================================================
+# Istio DestinationRule — subset'lar va connection pooling
+# ============================================================
+# TZ: "mTLS, traffic management, observability"
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: qurilish-api
+  namespace: qurilish-prod
+spec:
+  host: qurilish-api
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+      http:
+        h2UpgradePolicy: DEFAULT
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    loadBalancer:
+      simple: LEAST_REQUEST  # eng kam yuklangan pod'ga yo'naltirish
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 60s
+      maxEjectionPercent: 50
+  subsets:
+  - name: stable
+    labels:
+      version: v5.5
+  - name: canary
+    labels:
+      version: v6.0

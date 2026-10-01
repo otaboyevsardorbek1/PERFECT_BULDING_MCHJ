@@ -1,0 +1,77 @@
+# ============================================================
+# Web Dashboard (Node.js) — Deployment + Service
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qurilish-web
+  namespace: qurilish-prod
+  labels:
+    app: qurilish-web
+    version: v5.5
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: qurilish-web
+  template:
+    metadata:
+      labels:
+        app: qurilish-web
+        version: v5.5
+        component: frontend
+    spec:
+      serviceAccountName: qurilish-web
+      containers:
+      - name: web
+        image: qurilish-factory/web:latest
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+          name: http
+        env:
+        - name: PORT
+          value: "3000"
+        - name: PY_API_URL
+          value: "http://qurilish-api:8000"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qurilish-web
+  namespace: qurilish-prod
+spec:
+  selector:
+    app: qurilish-web
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qurilish-web
+  namespace: qurilish-prod

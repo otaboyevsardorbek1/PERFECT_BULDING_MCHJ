@@ -1,0 +1,234 @@
+# ============================================================
+# Multi-Cloud / Disaster Recovery — Qurilish Korxonasi
+# ============================================================
+# TZ: "RPO ≤ 1 soat, RTO ≤ 4 soat"
+# TZ: "Cross-region S3, Velero, RDS Multi-AZ"
+
+# ============================================================
+# 1. Velero Backup — Kubernetes resurslarni zaxiralash
+# ============================================================
+# TZ: "Backup strategiyasi: K8s — Velero (etcd, PV)"
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: qurilish-hourly-backup
+  namespace: velero
+spec:
+  schedule: "0 * * * *"  # Har soatda
+  template:
+    includedNamespaces:
+    - qurilish-prod
+    includedResources:
+    - "*"
+    excludedResources:
+    - events
+    - events.events.k8s.io
+    storageLocation: default
+    volumeSnapshotLocations:
+    - default
+    ttl: 720h  # 30 kun saqlash
+
+---
+# ============================================================
+# 2. Cross-Region S3 Replication — asosiy va zaxira hududlar
+# ============================================================
+# TZ: "Cross-region DR — asosiy va zaxira hududlar"
+# AWS S3 Cross-Region Replication
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-replication-config
+  namespace: qurilish-prod
+data:
+  PRIMARY_REGION: "ap-south-1"    # Mumbai (asosiy)
+  DR_REGION: "eu-west-1"         # Ireland (zaxira)
+  S3_BUCKET_PRIMARY: "qurilish-backups-ap"
+  S3_BUCKET_DR: "qurilish-backups-eu"
+  REPLICATION_RULE: |
+    {
+      "Role": "arn:aws:iam::ACCOUNT_ID:role/s3-replication-role",
+      "Rules": [
+        {
+          "Status": "Enabled",
+          "Priority": 1,
+          "DeleteMarkerReplication": { "Status": "Enabled" },
+          "Filter": { "Prefix": "backups/" },
+          "Destination": {
+            "Bucket": "arn:aws:s3:::qurilish-backups-eu",
+            "StorageClass": "STANDARD_IA"
+          }
+        }
+      ]
+    }
+
+---
+# ============================================================
+# 3. Velero Restic — Persistent Volume zaxiralash
+# ============================================================
+# TZ: "Har 6 soatda to'liq backup, har 15 daqiqada WAL shipping"
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: qurilish-db-backup
+  namespace: velero
+spec:
+  schedule: "0 */6 * * *"  # Har 6 soatda
+  template:
+    includedNamespaces:
+    - qurilish-prod
+    includedResources:
+    - persistentvolumeclaims
+    - persistentvolumes
+    hooks:
+      resources:
+      - name: pg-dump
+        includedNamespaces:
+        - qurilish-prod
+        labelSelector:
+          matchLabels:
+            app: qurilish-api
+        pre:
+        - exec:
+            container: api
+            command:
+            - /bin/sh
+            - -c
+            - "pg_dump -h $DB_HOST -U $DB_USER -d $DB_NAME -Fc > /tmp/backup.dump"
+            onError: Fail
+            timeout: 300s
+    storageLocation: default
+    ttl: 168h  # 7 kun saqlash
+
+---
+# ============================================================
+# 4. PostgreSQL WAL Shipping — real vaqt replication
+# ============================================================
+# TZ: "Har 15 daqiqada WAL shipping — RPO ≤ 1 soat"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-wal-config
+  namespace: qurilish-prod
+data:
+  postgresql.conf: |
+    # WAL (Write-Ahead Log) shipping
+    wal_level = replica
+    max_wal_senders = 3
+    wal_keep_size = 1GB
+    archive_mode = on
+    archive_command = 'aws s3 cp %p s3://qurilish-wal-archive/%f'
+    
+    # Streaming replication
+    synchronous_commit = on
+    synchronous_standby_names = '*'
+    
+    # RPO monitoring
+    log_checkpoints = on
+    log_replication_commands = on
+
+---
+# ============================================================
+# 5. Failover — Aralash strategiya
+# ============================================================
+# TZ: "Asosiy provayder ishdan chiqsa, avtomatik ikkinchisiga o'tish"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: failover-strategy
+  namespace: qurilish-prod
+data:
+  FAILOVER_PRIMARY: "ap-south-1"
+  FAILOVER_DR: "eu-west-1"
+  FAILOVER_TRIGGER: "health-check-failure"
+  FAILOVER_TIMEOUT: "300s"  # 5 daqiqa — keyin DR'ga o'tish
+  FAILOVER_STEPS: |
+    1. API pod'lari DR region'da ko'tariladi (Velero restore)
+    2. DNS (Route53) DR region'ga yo'naltiriladi
+    3. PostgreSQL standby → primary ga aylanadi
+    4. Eski primary tuzalganda standby sifatida qayta ulanadi
+
+---
+# ============================================================
+# 6. DR Runbook — Avtomatlashtirilgan recovery
+# ============================================================
+# TZ: "DR runbook — batafsil qo'llanma va avtomatlashtirilgan
+#     recovery Job (K8s Job)"
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dr-recovery
+  namespace: qurilish-prod
+  labels:
+    app: dr-recovery
+    purpose: disaster-recovery
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600  # 1 soatdan keyin o'chadi
+  template:
+    metadata:
+      labels:
+        app: dr-recovery
+    spec:
+      serviceAccountName: qurilish-api
+      containers:
+      - name: recovery
+        image: qurilish-factory/api:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== DR Recovery bosqichi 1: Database tiklash ==="
+          python -c "
+          from utils.backup import restore_backup
+          import os, glob
+          
+          # Eng oxirgi backup'ni topish
+          backups = sorted(glob.glob('backups/backup_*.db'), reverse=True)
+          if backups:
+              restore_backup(backups[0])
+              print(f'Backup tiklandi: {backups[0]}')
+          else:
+              print('Backup topilmadi!')
+          "
+          
+          echo "=== DR Recovery bosqichi 2: Read model'lar yangilash ==="
+          python -c "
+          from database.session import get_db_session
+          from utils.event_store import refresh_read_models
+          
+          with get_db_session() as db:
+              refresh_read_models(db)
+              print('Read model''lar yangilandi')
+          "
+          
+          echo "=== DR Recovery bosqichi 3: Healthcheck ==="
+          python -c "
+          import urllib.request, json
+          for _ in range(30):
+              try:
+                  r = urllib.request.urlopen('http://localhost:8000/health')
+                  data = json.loads(r.read())
+                  if data.get('status') == 'ok':
+                      print('API sog''lom!')
+                      break
+              except:
+                  import time; time.sleep(2)
+          else:
+              print('API ishlamadi!')
+          "
+        env:
+        - name: USE_POSTGRESQL
+          value: "true"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: qurilish-db-credentials
+              key: host
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+      restartPolicy: OnFailure

@@ -1,0 +1,149 @@
+# ============================================================
+# Istio Security — mTLS + AuthorizationPolicy (Zero Trust)
+# ============================================================
+# TZ: "Zero Trust Network Access — har bir so'rov autentifikatsiya
+#     va avtorizatsiyadan o'tadi"
+# TZ: "mTLS — xizmatlararo aloqalar shifrlangan va sertifikat
+#     asosida tasdiqlanadi"
+
+# 1. PeerAuthentication — STRICT mTLS (barcha xizmatlar o'rtasida)
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: qurilish-prod
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# 2. AuthorizationPolicy — API xizmatiga kirish qoidalari
+# Faqat Istio mesh ichidagi xizmatlar qo'shni xizmatlarga murojaat qila oladi
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: qurilish-api-policy
+  namespace: qurilish-prod
+spec:
+  selector:
+    matchLabels:
+      app: qurilish-api
+  action: ALLOW
+  rules:
+  # Web dashboard → API: ruxsat
+  - from:
+    - source:
+        principals:
+        - "cluster.local/ns/qurilish-prod/sa/qurilish-web"
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*", "/health"]
+  # Bot → API: ruxsat
+  - from:
+    - source:
+        principals:
+        - "cluster.local/ns/qurilish-prod/sa/qurilish-bot"
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/*", "/health"]
+  # Istio healthcheck: ruxsat
+  - to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/health", "/ready"]
+
+---
+# 3. RequestAuthentication — JWT token tekshirish
+# TZ: "JWT + Refresh token — Access token 1 soat, refresh 7 kun"
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth
+  namespace: qurilish-prod
+spec:
+  selector:
+    matchLabels:
+      app: qurilish-api
+  jwtRules:
+  - issuer: "https://qurilish-factory.example.com"
+    jwksUri: "https://qurilish-factory.example.com/.well-known/jwks.json"
+    forwardOriginalHeadersOnPassThrough: true
+
+---
+# 4. AuthorizationPolicy — JWT tekshiruvi bilan API kirish
+# Faqat to'g'ri JWT token bilan kirish mumkin
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: api-jwt-auth
+  namespace: qurilish-prod
+spec:
+  selector:
+    matchLabels:
+      app: qurilish-api
+  action: DENY
+  rules:
+  # Healthcheck — JWT shart emas
+  - to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/health", "/ready"]
+    when:
+    - notValues:
+      - "request.headers[authorization]:.*"
+  # Barcha /api/* so'rovlar JWT talab qiladi
+  - to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*"]
+    when:
+    - notValues:
+      - "request.headers[authorization]:.*"
+
+---
+# 5. Rate Limiting — Istio EnvoyFilter
+# TZ: "API javob vaqti p95 < 200 ms, 1000+ so'rov/sek"
+apiVersion: networking.istio.io/v1beta1
+kind: EnvoyFilter
+metadata:
+  name: rate-limit
+  namespace: qurilish-prod
+spec:
+  workloadSelector:
+    labels:
+      app: qurilish-api
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.local_ratelimit
+        typed_config:
+          "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+          type_url: type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+          value:
+            stat_prefix: http_local_rate_limiter
+            token_bucket:
+              max_tokens: 300
+              tokens_per_fill: 300
+              fill_interval: 60s
+            filter_enabled:
+              runtime_key: local_rate_limit_enabled
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            filter_enforced:
+              runtime_key: local_rate_limit_enforced
+              default_value:
+                numerator: 100
+                denominator: HUNDRED

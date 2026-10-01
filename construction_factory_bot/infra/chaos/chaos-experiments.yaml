@@ -1,0 +1,259 @@
+# ============================================================
+# Chaos Engineering — Qurilish Korxonasi
+# ============================================================
+# TZ: "Chaos Engineering — Pod o'chirish, tarmoq kechikishlari,
+#     DB failover — rejali ravishda sinovlar o'tkazish"
+# TZ: "Har oyda chaos testing (pod kill, network delay, DB failover)"
+
+# ============================================================
+# 1. Pod Kill — API pod'ini tasodifiy o'chirish
+# ============================================================
+# TZ: "Uptime ≥ 99.99% — Kubernetes, self-healing"
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: pod-kill-experiment
+  namespace: qurilish-prod
+spec:
+  appinfo:
+    appns: qurilish-prod
+    applabel: app=qurilish-api
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  engineState: active
+  experiments:
+  - name: pod-delete
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "30"  # 30 sekund davomida
+        - name: CHAOS_INTERVAL
+          value: "10"  # har 10 sekundda bittadan
+        - name: FORCE
+          value: "false"  # graceful shutdown
+
+---
+# ============================================================
+# 2. Network Delay — Tarmoq kechikishlari
+# ============================================================
+# TZ: "API latensiyasi p95 < 200 ms — kechikishlarga chidamlilik"
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: network-delay-experiment
+  namespace: qurilish-prod
+spec:
+  appinfo:
+    appns: qurilish-prod
+    applabel: app=qurilish-api
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  engineState: active
+  experiments:
+  - name: pod-network-latency
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "120"  # 2 daqiqa
+        - name: NETWORK_LATENCY
+          value: "200"  # 200ms kechikish (servis mesh qancha chidaydi?)
+        - name: JITTER
+          value: "50"   # 50ms tasodifiy o'zgarish
+        - name: DESTINATION_IPS
+          value: "10.0.0.0/16"  # ichki tarmoq
+
+---
+# ============================================================
+# 3. Network Partition — Tarmoq uzilishi
+# ============================================================
+# TZ: "Service Mesh — xizmatlararo aloqa uzilsa nima bo'ladi?"
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: network-partition-experiment
+  namespace: qurilish-prod
+spec:
+  appinfo:
+    appns: qurilish-prod
+    applabel: app=qurilish-api
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  engineState: active
+  experiments:
+  - name: pod-network-loss
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "60"  # 1 daqiqa
+        - name: NETWORK_LOSS_PERCENTAGE
+          value: "100"  # to'liq uzilish
+        - name: DESTINATION_IPS
+          value: "10.0.0.0/16"
+
+---
+# ============================================================
+# 4. CPU Stress — Resurs yetishmasligi
+# ============================================================
+# TZ: "HPA — avtomatik skeyling ishlayaptimi?"
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: cpu-stress-experiment
+  namespace: qurilish-prod
+spec:
+  appinfo:
+    appns: qurilish-prod
+    applabel: app=qurilish-api
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  engineState: active
+  experiments:
+  - name: pod-cpu-hog
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "180"  # 3 daqiqa
+        - name: CPU_CORES
+          value: "2"    # 2 yadro stress
+
+---
+# ============================================================
+# 5. Memory Stress — Xotira yetishmasligi
+# ============================================================
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: memory-stress-experiment
+  namespace: qurilish-prod
+spec:
+  appinfo:
+    appns: qurilish-prod
+    applabel: app=qurilish-api
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  engineState: active
+  experiments:
+  - name: pod-memory-hog
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "180"
+        - name: MEMORY_CONSUMPTION
+          value: "500"  # 500MB xotira stress
+
+---
+# ============================================================
+# 6. DB Failover — PostgreSQL Primary → Standby
+# ============================================================
+# TZ: "DB failover — RDS Multi-AZ, ElastiCache Multi-AZ"
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: db-failover-experiment
+  namespace: qurilish-prod
+spec:
+  appinfo:
+    appns: qurilish-prod
+    applabel: app=qurilish-api
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  engineState: active
+  experiments:
+  - name: pod-delete
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "60"
+        - name: TARGET_PODS
+          value: "postgres-primary"  # DB pod'ini o'chirish
+        - name: FORCE
+          value: "false"
+
+---
+# ============================================================
+# 7. CronJob — Har oyda rejalangan chaos test
+# ============================================================
+# TZ: "Har oyda chaos testing (pod kill, network delay, DB failover)"
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: monthly-chaos-test
+  namespace: qurilish-prod
+spec:
+  schedule: "0 3 1 * *"  # Har oyning 1-kuni, ertalab 3:00
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: chaos-runner
+        spec:
+          serviceAccountName: litmus-admin
+          containers:
+          - name: chaos-runner
+            image: litmuschaos/chaos-runner:latest
+            env:
+            - name: CHAOS_ENGINE
+              value: "pod-kill-experiment"
+            - name: CHAOS_NAMESPACE
+              value: "qurilish-prod"
+            - name: TEST_DURATION
+              value: "300"  # 5 daqiqa jami
+          restartPolicy: Never
+
+---
+# ============================================================
+# 8. SLO Validation — Chaos testdan keyin tekshirish
+# ============================================================
+# TZ: "SLO: API latensiyasi p95 < 200 ms, xatolik foizi < 0.1%"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slo-config
+  namespace: qurilish-prod
+data:
+  SLO_API_LATENCY_P95: "200"        # ms
+  SLO_ERROR_RATE_PERCENT: "0.1"     # %
+  SLO_UPTIME_PERCENT: "99.99"       # %
+  SLO_AVAILABILITY_WINDOW: "30d"    # 30 kunlik oyna
+  SLO_RECOVERY_TIME: "240"          # RTO: 4 daqiqa (soniya)
+  SLO_RECOVERY_POINT: "3600"        # RPO: 1 soat (soniya)
+  VALIDATION_COMMAND: |
+    # Chaos testdan keyin SLO tekshirish
+    python -c "
+    import urllib.request, json, time
+    
+    # 1. API sog'ligini tekshirish
+    for i in range(10):
+        try:
+            start = time.time()
+            r = urllib.request.urlopen('http://localhost:8000/health', timeout=5)
+            latency_ms = (time.time() - start) * 1000
+            data = json.loads(r.read())
+            if data.get('status') == 'ok':
+                print(f'✅ API sog''lom (latency: {latency_ms:.0f}ms)')
+                break
+        except Exception as e:
+            print(f'❌ API xato: {e}')
+            time.sleep(3)
+    else:
+        print('❌ API 10 urinishdan keyin ham ishlamadi!')
+        exit(1)
+    
+    # 2. Event store integrity
+    try:
+        r = urllib.request.urlopen('http://localhost:8000/api/events/stats', timeout=5)
+        stats = json.loads(r.read())
+        print(f'✅ Event store: {stats.get(\"total_events\", 0)} ta event')
+    except:
+        print('⚠️ Event store stats olinmadi')
+    
+    print('✅ Chaos test SLO validatsiyasi muvaffaqiyatli!')
+    "

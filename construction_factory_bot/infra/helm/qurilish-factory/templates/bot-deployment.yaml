@@ -1,0 +1,67 @@
+{{- if .Values.bot.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qurilish.fullname" . }}-bot
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "qurilish.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bot
+spec:
+  replicas: {{ .Values.bot.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qurilish.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bot
+  template:
+    metadata:
+      labels:
+        {{- include "qurilish.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bot
+    spec:
+      containers:
+      - name: bot
+        image: {{ include "qurilish.image" .Values.bot.image . }}
+        command: ["python", "main.py"]
+        env:
+        - name: BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.bot.secrets.botSecret }}
+              key: bot-token
+        - name: ADMIN_IDS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.bot.secrets.botSecret }}
+              key: admin-ids
+        - name: USE_POSTGRESQL
+          value: "true"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: host
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.api.secrets.dbSecret }}
+              key: password
+        resources:
+          {{- toYaml .Values.bot.resources | nindent 10 }}
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        emptyDir: {}
+{{- end }}

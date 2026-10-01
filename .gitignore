@@ -1,0 +1,28 @@
+.ourent/
+.env
+# Secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+
+# Ourent
+.ourent/
+.ourent
+
+# Backups
+*.backup
+.env.backup
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.pytest_cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,67 @@
+{{- if .Values.web.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qurilish.fullname" . }}-web
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "qurilish.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qurilish.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "qurilish.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+      - name: web
+        image: {{ include "qurilish.image" .Values.web.image . }}
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+          name: http
+        env:
+        - name: PORT
+          value: "3000"
+        - name: PY_API_URL
+          value: "http://{{ include "qurilish.fullname" . }}-api:{{ .Values.api.service.port }}"
+        resources:
+          {{- toYaml .Values.web.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "qurilish.fullname" . }}-web
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "qurilish.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  selector:
+    {{- include "qurilish.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+  ports:
+  - port: {{ .Values.web.service.port }}
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  type: {{ .Values.web.service.type }}
+{{- end }}

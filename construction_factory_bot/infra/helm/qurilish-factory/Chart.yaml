@@ -1,0 +1,15 @@
+apiVersion: v2
+name: qurilish-factory
+description: Qurilish Materiallari Korxonasi — to'liq avtomatlashtirilgan tizim
+type: application
+version: 1.0.0
+appVersion: "5.5.0"
+keywords:
+  - construction
+  - factory
+  - erp
+  - warehouse
+  - sales
+maintainers:
+  - name: Qurilish Team
+    email: dev@qurilish-factory.uz

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/part-of: qurilish-factory
+    istio-injection: enabled
+    environment: {{ .Values.global.environment }}

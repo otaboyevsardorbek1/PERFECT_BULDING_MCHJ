@@ -1,0 +1,173 @@
+# ============================================================
+# Qurilish Korxonasi — Helm Values (Production)
+# ============================================================
+
+# Global sozlamalar
+global:
+  namespace: qurilish-prod
+  imageRegistry: "123456789.dkr.ecr.ap-south-1.amazonaws.com/qurilish"
+  imageTag: "latest"
+  environment: production
+
+# =============== API (FastAPI Backend) ===============
+api:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: api
+    tag: ""  # global.imageTag ishlatiladi
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 8000
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+  
+  healthcheck:
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  
+  # DB credentials (Kubernetes Secrets'dan)
+  secrets:
+    dbSecret: qurilish-db-credentials
+    apiSecret: qurilish-api-secrets
+    backupSecret: qurilish-backup-secrets
+
+# =============== Web (Node.js Frontend) ===============
+web:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: web
+    tag: ""
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 80
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# =============== Bot (Telegram Aiogram) ===============
+bot:
+  enabled: true
+  replicaCount: 1  # Bot faqat bitta instance (polling)
+  image:
+    repository: bot
+    tag: ""
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  secrets:
+    botSecret: qurilish-bot-secrets
+
+# =============== Event Worker ===============
+eventWorker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: api
+    tag: ""
+    pullPolicy: IfNotPresent
+  
+  command: ["python", "-c"]
+  args:
+    - |
+      import time, sys
+      sys.path.insert(0, '.')
+      from database.session import get_db_session
+      from utils.event_store import refresh_read_models
+      import logging
+      logging.basicConfig(level=logging.INFO)
+      logger = logging.getLogger('event-worker')
+      logger.info('Event Store Worker ishga tushdi')
+      while True:
+          try:
+              with get_db_session() as db:
+                  refresh_read_models(db)
+                  logger.info('Read model lar yangilandi')
+          except Exception as e:
+              logger.error(f'Event worker xato: {e}')
+          time.sleep(300)
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+# =============== Ingress ===============
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  hosts:
+  - host: app.qurilish-factory.uz
+    paths:
+    - path: /
+      pathType: Prefix
+      service: web
+      port: 80
+  - host: api.qurilish-factory.uz
+    paths:
+    - path: /
+      pathType: Prefix
+      service: api
+      port: 8000
+  tls:
+  - secretName: qurilish-tls
+    hosts:
+    - app.qurilish-factory.uz
+    - api.qurilish-factory.uz
+
+# =============== PersistentVolume ===============
+persistence:
+  enabled: true
+  dbStorage: 50Gi
+  backupStorage: 100Gi
+  storageClassName: gp3
+
+# =============== Monitoring ===============
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+# =============== Chaos Engineering ===============
+chaos:
+  enabled: false  # Faqat kerak bo'lganda yoqiladi
+  schedule: "0 3 1 *"  # Har oyning 1-kuni

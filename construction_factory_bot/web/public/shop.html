@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🛒 Onlayn Do'kon — Qurilish Materiallari</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#fff; --line:#e3e7ee; --txt:#1f2937; --mut:#6b7280;
+    --brand:#b45309; --brand2:#92400e; --ok:#16a34a; --err:#dc2626;
+    --r:14px; --sh:0 1px 3px rgba(0,0,0,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt)}
+  .top{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line)}
+  .top-in{max-width:1120px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px}
+  .logo{font-size:20px;font-weight:800;color:var(--brand2);white-space:nowrap}
+  .logo small{display:block;font-size:11px;color:var(--mut);font-weight:500}
+  .search{flex:1;max-width:340px;margin-left:auto}
+  .search input{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none}
+  .cart-btn{position:relative;border:0;background:var(--brand);color:#fff;font-size:15px;
+    padding:10px 16px;border-radius:10px;cursor:pointer;font-weight:600;white-space:nowrap}
+  .cart-btn:hover{background:var(--brand2)}
+  .badge{position:absolute;top:-6px;right:-6px;background:var(--err);color:#fff;border-radius:50%;
+    min-width:20px;height:20px;font-size:12px;display:none;align-items:center;justify-content:center;padding:0 4px}
+  .wrap{max-width:1120px;margin:0 auto;padding:16px}
+  .cats{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 16px}
+  .chip{border:1px solid var(--line);background:#fff;padding:7px 14px;border-radius:99px;cursor:pointer;font-size:13.5px}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;
+    display:flex;flex-direction:column;gap:8px;box-shadow:var(--sh)}
+  .cat{font-size:12px;color:var(--mut);text-transform:capitalize}
+  .name{font-weight:700;font-size:15.5px;line-height:1.3}
+  .price{font-size:18px;font-weight:800;color:var(--brand2)}
+  .avail{font-size:12.5px;color:var(--mut)}
+  .avail.low{color:var(--err);font-weight:600}
+  .row-btn{margin-top:auto;display:flex;gap:8px}
+  .add{flex:1;border:0;background:var(--brand);color:#fff;padding:9px 0;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer}
+  .add:disabled{background:#d1d5db;cursor:not-allowed}
+  .qty-in{width:52px;text-align:center;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .empty{color:var(--mut);text-align:center;padding:50px 0}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(400px,92vw);background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);
+    z-index:40;display:flex;flex-direction:column;transform:translateX(105%);transition:transform .22s}
+  .drawer.open{transform:none}
+  .d-head{display:flex;justify-content:space-between;align-items:center;padding:16px;border-bottom:1px solid var(--line)}
+  .d-items{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+  .line{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .line .ln{flex:1}
+  .ln .p{font-size:13.5px;font-weight:600}
+  .ln .s{font-size:12px;color:var(--mut)}
+  .st{border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;width:26px;height:26px;font-size:15px}
+  .rm{border:0;background:none;color:var(--err);cursor:pointer;font-size:15px}
+  .d-foot{border-top:1px solid var(--line);padding:14px 16px}
+  .total{display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-bottom:10px}
+  .btn{width:100%;border:0;background:var(--brand);color:#fff;padding:12px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}
+  .btn:disabled{background:#d1d5db}
+  .btn2{background:#fff;color:var(--txt);border:1px solid var(--line)}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none;align-items:center;justify-content:center;padding:14px}
+  .modal-bg.show{display:flex}
+  .modal{background:#fff;border-radius:16px;padding:20px;width:min(480px,100%);max-height:92vh;overflow:auto}
+  .modal h3{margin-bottom:12px}
+  .f{margin-bottom:12px}
+  .f label{display:block;font-size:13px;color:var(--mut);margin-bottom:5px}
+  .f input,.f textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font-size:14.5px;font-family:inherit}
+  .pay{display:flex;flex-direction:column;gap:8px;margin:6px 0 14px}
+  .pay label{border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:9px;align-items:center;font-size:14.5px}
+  .pay input{accent-color:var(--brand)}
+  .result{text-align:center;padding:8px 0}
+  .result .num{font-size:19px;font-weight:800;color:var(--brand2);margin:8px 0}
+  .ok{color:var(--ok)} .err{color:var(--err)}
+  .paylink{display:inline-block;margin-top:10px;background:var(--ok);color:#fff;padding:12px 18px;border-radius:10px;
+    text-decoration:none;font-weight:700;font-size:15px}
+  .check{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .check input{flex:1;min-width:140px;padding:9px;border:1px solid var(--line);border-radius:9px;font-size:13.5px}
+  .check .btn{width:auto;padding:9px 14px}
+  .overlay{position:fixed;inset:0;z-index:60;background:#fff;display:none;align-items:center;justify-content:center;font-size:18px}
+  .overlay.show{display:flex}
+  .errbar{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;margin-bottom:12px;display:none;font-size:14px}
+  .x{background:none;border:0;font-size:22px;cursor:pointer;color:var(--mut)}
+  @media (max-width:600px){ .logo small{display:none} }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="top-in">
+    <div class="logo">🛒 Onlayn Do'kon<small>Qurilish materiallari</small></div>
+    <div class="search"><input id="q" placeholder="🔍 Mahsulot qidirish…"></div>
+    <button class="cart-btn" onclick="openCart()">🛒 Savat<span class="badge" id="cartBadge">0</span></button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="errbar" id="errbar"></div>
+  <div class="cats" id="cats"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">📭 Mahsulot topilmadi</div>
+
+  <div class="check">
+    <input id="ckNum" placeholder="Buyurtma raqami (SHOP-...)" style="flex:2">
+    <input id="ckPhone" placeholder="+998 telefon raqamingiz" style="flex:2">
+    <button class="btn" style="width:auto" onclick="checkOrder()">Buyurtma holati</button>
+  </div>
+</div>
+
+<!-- SAVAT -->
+<div class="drawer" id="drawer">
+  <div class="d-head"><b>🛒 Savat</b><button class="x" onclick="closeCart()">×</button></div>
+  <div class="d-items" id="dItems"></div>
+  <div class="d-foot">
+    <div class="total"><span>Jami:</span><span id="dTotal">0 so'm</span></div>
+    <button class="btn" id="checkoutBtn" onclick="openCheckout()">Buyurtma berish</button>
+  </div>
+</div>
+
+<!-- CHECKOUT -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal" id="checkoutModal">
+    <h3>📦 Buyurtma rasmiylashtirish</h3>
+    <div class="f"><label>Ism / familiya *</label><input id="fName" placeholder="Ali Aliyev"></div>
+    <div class="f"><label>Telefon *</label><input id="fPhone" placeholder="+998 90 123 45 67"></div>
+    <div class="f"><label>Manzil</label><input id="fAddr" placeholder="Shahar, ko'cha, uy"></div>
+    <div class="f"><label>Izoh</label><textarea id="fNote" rows="2" placeholder="Ixtiyoriy"></textarea></div>
+    <label style="font-size:13px;color:var(--mut)">To'lov usuli:</label>
+    <div class="pay">
+      <label><input type="radio" name="pay" value="cash" checked> 💵 Naqd (yetkazishda to'laysiz)</label>
+      <label><input type="radio" name="pay" value="click"> 💳 Click orqali to'lash</label>
+      <label><input type="radio" name="pay" value="payme"> 💳 Payme orqali to'lash</label>
+      <label><input type="radio" name="pay" value="mixed-click"> 🔀 Click + 💵 Naqd (aralash)</label>
+      <label><input type="radio" name="pay" value="mixed-payme"> 🔀 Payme + 💵 Naqd (aralash)</label>
+    </div>
+    <div class="f" id="cashPartRow" style="display:none">
+      <label>💵 Naqd qismi (so'm) — yetkazishda to'laysiz</label>
+      <input id="fCash" type="number" min="1000" step="1000" placeholder="masalan 50 000">
+      <div id="onlineHint" style="font-size:12.5px;color:var(--mut);margin-top:4px"></div>
+    </div>
+    <button class="btn" id="payBtn" onclick="submitOrder()">✅ Tasdiqlash</button>
+  </div>
+  <div class="modal" id="resultModal" style="display:none"></div>
+</div>
+
+<div class="overlay" id="load"><span>⏳ Yuborilmoqda…</span></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+let catalog = [], activeCat = null, cart = {};
+
+function fmt(n){ return Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ") + " so'm"; }
+
+async function api(path, opts={}){
+  const r = await fetch("/api/shop" + path, {headers:{"Content-Type":"application/json"}, ...opts});
+  const body = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(body.detail || body.error || "Xatolik yuz berdi");
+  return body;
+}
+
+// ---- Katalog ----
+async function loadCatalog(){
+  try{
+    const data = await api(`/catalog${activeCat ? "?category="+encodeURIComponent(activeCat) : ""}`);
+    catalog = data.products || [];
+    renderGrid();
+  }catch(e){ showErr(e.message); }
+}
+function showErr(m){ const el=$("#errbar"); el.textContent=m; el.style.display="block"; setTimeout(()=>el.style.display="none",6000); }
+
+async function loadCats(){
+  try{
+    const data = await api("/categories");
+    const cats = data.categories || [];
+    const el = $("#cats");
+    const chip = (label, val) => `<button class="chip ${activeCat===val?"on":""}" onclick="setCat('${val||''}')">${label}</button>`;
+    el.innerHTML = chip("Hammasi","") + cats.map(c=>chip(c.name, c.name)).join("");
+  }catch(e){}
+}
+function setCat(c){ activeCat = c||null; loadCats(); loadCatalog(); }
+$("#q").addEventListener("input", debounce(loadCatalog, 300));
+function debounce(fn,ms){ let t; return ()=>{clearTimeout(t); t=setTimeout(fn,ms);} }
+
+function renderGrid(){
+  const q = ($("#q").value||"").toLowerCase();
+  const list = catalog.filter(p=>!q || (p.name||"").toLowerCase().includes(q));
+  $("#empty").style.display = list.length ? "none" : "block";
+  $("#grid").innerHTML = list.map(p=>{
+    const inCart = cart[p.id]||0;
+    const out = p.available <= 0;
+    return `<div class="card">
+      <div class="cat">${p.category||""}</div>
+      <div class="name">${esc(p.name)}</div>
+      <div class="price">${fmt(p.price)}</div>
+      <div class="avail ${p.available<10?"low":""}">Mavjud: ${Math.floor(p.available)} ${p.unit||""}</div>
+      <div class="row-btn">
+        <button class="add" ${out?"disabled":""} onclick="addToCart(${p.id})">${out?"Tugagan":(inCart?"+ Qo'shildi":"+ Qo'shish")}</button>
+        ${inCart?`<input class="qty-in" value="${inCart}" onchange="setQty(${p.id},this.value)">`:""}
+      </div>
+    </div>`;
+  }).join("");
+}
+function esc(s){ return String(s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+// ---- Savat ----
+function save(){ localStorage.setItem("shop_cart", JSON.stringify(cart)); renderCart(); }
+function loadCart(){ try{ cart = JSON.parse(localStorage.getItem("shop_cart"))||{}; }catch(e){ cart={}; } }
+function addToCart(pid){
+  const p = catalog.find(x=>x.id===pid); if(!p) return;
+  cart[pid] = Math.min((cart[pid]||0)+1, p.available||1);
+  save(); refreshBadge(); renderGrid();
+}
+function setQty(pid, v){
+  const p = catalog.find(x=>x.id===pid); if(!p) return;
+  let q = parseInt(v,10)||0;
+  if(q<=0){ delete cart[pid]; } else { q = Math.min(q, p.available||999); cart[pid]=q; }
+  save(); refreshBadge();
+}
+function removeItem(pid){ delete cart[pid]; save(); refreshBadge(); }
+function refreshBadge(){
+  const n = Object.values(cart).reduce((a,b)=>a+b,0);
+  const b = $("#cartBadge"); b.textContent = n; b.style.display = n?"flex":"none";
+}
+function openCart(){ renderCart(); $("#drawer").classList.add("open"); }
+function closeCart(){ $("#drawer").classList.remove("open"); }
+function renderCart(){
+  const el = $("#dItems");
+  const ids = Object.keys(cart).map(Number);
+  if(!ids.length){ el.innerHTML = `<div class="empty" style="padding:20px">Savat bo'sh</div>`; }
+  el.innerHTML = ids.map(id=>{
+    const p = catalog.find(x=>x.id===id); if(!p) return "";
+    const q = cart[id];
+    return `<div class="line">
+      <div class="ln"><div class="p">${esc(p.name)}</div>
+      <div class="s">${fmt(p.price)} × ${q} = ${fmt(p.price*q)}</div></div>
+      <button class="st" onclick="setQty(${id},${q-1})">−</button>
+      <button class="st" onclick="setQty(${id},${q+1})">+</button>
+      <button class="rm" onclick="removeItem(${id})">✕</button>
+    </div>`;
+  }).join("");
+  const total = ids.reduce((s,id)=> s + (cart[id]||0) * ((catalog.find(x=>x.id===id)||{}).price||0), 0);
+  $("#dTotal").textContent = fmt(total);
+  $("#checkoutBtn").disabled = !ids.length;
+}
+
+// ---- Checkout ----
+function cartTotal(){
+  return Object.keys(cart).reduce((s,id)=> s + (cart[id]||0) * ((catalog.find(x=>x.id===+id)||{}).price||0), 0);
+}
+function updatePayUi(){
+  const method = document.querySelector("input[name=pay]:checked").value;
+  const mixed = method.indexOf("mixed-") === 0;
+  $("#cashPartRow").style.display = mixed ? "block" : "none";
+  if(!mixed) return;
+  const total = cartTotal();
+  const gateway = method.replace("mixed-","").toUpperCase();
+  const cash = Math.round(parseFloat($("#fCash").value||"0")||0);
+  const online = Math.max(total - cash, 0);
+  $("#onlineHint").innerHTML =
+    `Jami: <b>${fmt(total)}</b> → 💳 ${gateway} orqali <b>${fmt(online)}</b> onlayn, qolgani naqd`;
+  $("#fCash").placeholder = "masalan " + Math.round(total/2/1000)*1000;
+}
+$("input[name=pay]").forEach(r => r.addEventListener("change", updatePayUi));
+$("#fCash").addEventListener("input", updatePayUi);
+
+function openCheckout(){
+  const ids = Object.keys(cart).map(Number);
+  if(!ids.length) return;
+  $("#fName").value = localStorage.getItem("shop_name")||"";
+  $("#fPhone").value = localStorage.getItem("shop_phone")||"";
+  $("#fAddr").value = localStorage.getItem("shop_addr")||"";
+  $("#fCash").value = "";
+  updatePayUi();
+  $("#checkoutModal").style.display="block"; $("#resultModal").style.display="none";
+  $("#modalBg").classList.add("show");
+}
+function closeModal(){ $("#modalBg").classList.remove("show"); }
+$("#modalBg").addEventListener("click", e=>{ if(e.target===e.currentTarget) closeModal(); });
+
+async function submitOrder(){
+  const name = $("#fName").value.trim(), phone = $("#fPhone").value.trim();
+  const rawMethod = document.querySelector("input[name=pay]:checked").value;
+  let method = rawMethod, online_gateway = null, cash_amount = null;
+  if(rawMethod.indexOf("mixed-") === 0){
+    method = "mixed";
+    online_gateway = rawMethod.replace("mixed-","");
+    const total = cartTotal();
+    cash_amount = Math.round(parseFloat($("#fCash").value||"0")||0);
+    if(cash_amount <= 0){ showErr("Naqd qismini kiriting (yetkazishda to'lanadigan summa)"); return; }
+    if(cash_amount >= total){ showErr("Naqd qismi jami summadan kam bo'lishi kerak — to'liq naqd bo'lsa 💵 Naqd usulini tanlang"); return; }
+  }
+  if(!name){ showErr("Ismni kiriting"); return; }
+  if(phone.replace(/\D/g,"").length < 9){ showErr("Telefon raqamni to'g'ri kiriting"); return; }
+  const items = Object.entries(cart).map(([pid,q])=>({product_id:+pid, quantity:q}));
+  $("#load").classList.add("show");
+  try{
+    const res = await api("/orders", {method:"POST", body: JSON.stringify({
+      name, phone, method, online_gateway, cash_amount,
+      address: $("#fAddr").value.trim()||null,
+      comment: $("#fNote").value.trim()||null,
+      items,
+    })});
+    localStorage.setItem("shop_name", name); localStorage.setItem("shop_phone", phone);
+    localStorage.setItem("shop_addr", $("#fAddr").value.trim());
+    cart = {}; save(); refreshBadge();
+    const order = res.order || {};
+    let html = `<div class="result">
+      <div class="ok" style="font-size:20px">✅ Buyurtma qabul qilindi</div>
+      <div class="num">${order.order_number}</div>`;
+    if(res.payment_link){
+      const gw = (order.online_gateway||method).toUpperCase();
+      let payTxt = `To'lovni amalga oshiring — to'lov tasdiqlangach buyurtma yakunlanadi.`;
+      if(order.cash_amount > 0){
+        payTxt = `<b>${fmt(order.online_amount)}</b> so'mni ${gw} orqali to'lang — qolgan <b>${fmt(order.cash_amount)}</b> so'mni yetkazishda naqd to'laysiz.`;
+      }
+      html += `<p style="color:var(--mut);font-size:14px">${payTxt}</p>
+        <a class="paylink" href="${res.payment_link}" target="_blank" rel="noopener">💳 ${gw} orqali to'lash</a>
+        <div style="margin-top:10px;font-size:13px;color:var(--mut)">To'lov sahifasi ochilmasa — yangi oynada oching.</div>`;
+    } else {
+      html += `<p class="ok">To'lov turi: naqd. Operator siz bilan bog'lanadi.</p>`;
+    }
+    html += `<button class="btn btn2" style="margin-top:14px" onclick="closeModal()">Yopish</button></div>`;
+    $("#resultModal").innerHTML = html;
+    $("#checkoutModal").style.display="none"; $("#resultModal").style.display="block";
+  }catch(e){ showErr(e.message); }
+  $("#load").classList.remove("show");
+}
+
+// ---- Holat tekshirish ----
+async function checkOrder(){
+  const num = $("#ckNum").value.trim(), phone = $("#ckPhone").value.trim();
+  if(!num || phone.replace(/\D/g,"").length < 9){ showErr("Buyurtma raqami va telefonni kiriting"); return; }
+  try{
+    const res = await api(`/orders/${encodeURIComponent(num)}?phone=${encodeURIComponent(phone)}`);
+    const o = res.order;
+    const items = (o.items||[]).map(i=>`• ${esc(i.product_name)} × ${i.quantity} ${i.unit||""} — ${fmt(i.amount)}`).join("<br>");
+    showErr("");
+    const el = $("#errbar");
+    el.style.display="block"; el.style.background="#dcfce7"; el.style.borderColor="#bbf7d0"; el.style.color="#166534";
+    el.innerHTML = `<b>${esc(o.order_number)}</b> — ${esc(o.status_label)}<br>${items}<br><b>Jami: ${fmt(o.total_amount)}</b>`;
+  }catch(e){
+    const el = $("#errbar"); el.style.display="block"; el.style.background=""; el.style.borderColor=""; el.style.color="";
+    showErr(e.message);
+  }
+}
+
+// init
+loadCart();
+(async function init(){ await loadCats(); await loadCatalog(); refreshBadge(); })();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "qurilish.fullname" . }}-db-pvc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "qurilish.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.dbStorage }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "qurilish.fullname" . }}-backups-pvc
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "qurilish.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backups
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.backupStorage }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+{{- end }}
