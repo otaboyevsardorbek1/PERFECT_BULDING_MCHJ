@@ -645,7 +645,7 @@ async def check_notifications_now(message: types.Message):
         await message.answer(
             f"✅ **Bildirishnomalar tekshirildi!**\n\n"
             f"📊 **Natijalar:**\n"
-            f"├ 📦 Xom ashyo: {low_stock_count} ta\n"
+            f"├ 📦 Xom ashyo/mahsulot: {low_stock_count} ta\n"
             f"├ 🏭 Ishlab chiqarish: {production_count} ta\n"
             f"├ ⚙️ Tizim: {system_count} ta\n"
             f"└ 📈 Jami: {total_count} ta\n\n"

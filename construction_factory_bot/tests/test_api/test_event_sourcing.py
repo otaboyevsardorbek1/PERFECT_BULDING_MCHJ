@@ -14,15 +14,18 @@ from unittest.mock import patch
 # ============================================================
 
 @pytest.fixture
-def db_session():
-    """Test DB session"""
-    from database.models import Base, engine
+def db_session(tmp_path):
+    """Test DB session — VAQTINCHALIK fayl, production DB'ga TEGMAYDI"""
+    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    Base.metadata.create_all(bind=engine)
+    from database import models
+    engine = create_engine(f"sqlite:///{tmp_path}/test_events.db")
+    models.Base.metadata.create_all(bind=engine)
     TestSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = TestSession()
     yield db
     db.close()
+    engine.dispose()
 
 
 # ============================================================

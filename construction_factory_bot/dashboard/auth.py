@@ -75,12 +75,13 @@ def _load_secret() -> str:
     secret = secrets.token_hex(32)
     try:
         _SECRET_FILE.write_text(secret, encoding="utf-8")
-        try:
-            os.chmod(_SECRET_FILE, 0o600)
-        except OSError:
-            pass
-    except OSError:
-        pass
+        os.chmod(_SECRET_FILE, 0o600)
+    except OSError as e:
+        raise RuntimeError(
+            f"XAVFSIZLIK: token imzolash kalitini saqlab bo'lmadi. "
+            f"API_SECRET_KEY ni .env ga qo'shing yoki "
+            f"{_SECRET_FILE.parent} papkaga yozish huquqi bering. Xato: {e}"
+        ) from e
     return secret
 
 

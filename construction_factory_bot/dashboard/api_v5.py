@@ -947,7 +947,7 @@ def api_v5_create_payment(data: dict, db: Session = Depends(get_db),
 def api_v5_payments_daily(day: Optional[str] = None, db: Session = Depends(get_db),
                           user: AuthUser = Depends(require_any_view_v5(["finance", "admin"]))):
     """Spec: GET /api/payments/daily — kunlik to'lov hisoboti."""
-    target = _parse_day(day) if day else date.today()
+    target = _parse_day(day) if day else datetime.utcnow().date()
     return crud_v5.get_daily_payments(db, target)
 
 
@@ -1073,7 +1073,7 @@ def api_delivery_signature(delivery_id: int, data: dict, db: Session = Depends(g
 def api_report_daily(day: Optional[str] = None, db: Session = Depends(get_db),
                      user: AuthUser = Depends(require_role("reports"))):
     """Spec: GET /api/reports/daily — kunlik hisobot."""
-    target = _parse_day(day) if day else date.today()
+    target = _parse_day(day) if day else datetime.utcnow().date()
     start = datetime.combine(target, datetime.min.time())
     end = datetime.combine(target, datetime.max.time())
     return {"period": "daily", "date": target.isoformat(),
@@ -1114,8 +1114,8 @@ def api_report_profit_loss(start: Optional[str] = None, end: Optional[str] = Non
                            db: Session = Depends(get_db),
                            user: AuthUser = Depends(require_role("reports"))):
     """Spec: GET /api/reports/profit-loss — Foyda/Zarar (alias: /api/finance/pl)."""
-    start_date = _parse_day(start) if start else (date.today() - timedelta(days=30))
-    end_date = _parse_day(end) if end else date.today()
+    start_date = _parse_day(start) if start else (datetime.utcnow().date() - timedelta(days=30))
+    end_date = _parse_day(end) if end else datetime.utcnow().date()
     return crud.get_pl_report(db, start_date, end_date)
 
 

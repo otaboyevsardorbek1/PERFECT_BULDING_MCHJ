@@ -29,6 +29,21 @@ from dashboard.auth import (
     verify_2fa_code, verify_password,
 )
 
+# Anonim foydalanuvchi uchun tannarx maydonlarini filtrlovchi yordamchi
+_COST_FIELDS_ANON = frozenset({
+    "price_per_unit", "production_cost", "profit_margin",
+    "total_cost", "warehouse_value", "value",
+})
+
+def _strip_cost_fields_anon(data):
+    """Rekursiv ravishda tannarx/narx maydonlarini olib tashlaydi"""
+    if isinstance(data, dict):
+        return {k: _strip_cost_fields_anon(v) for k, v in data.items()
+                if k not in _COST_FIELDS_ANON}
+    if isinstance(data, list):
+        return [_strip_cost_fields_anon(item) for item in data]
+    return data
+
 # =============== TANNARX MAYDONLARINI YASHIRISH (server tomonda) ===============
 # see_cost=False rollar (sotuvchi, kassir, omborchi, haydovchi, ishchi) tannarx/narx
 # ma'lumotlarini frontend'da yashirish orqali emas, SERVER darajasida ololmasligi kerak.
@@ -48,8 +63,11 @@ class CostVisibilityMiddleware(BaseHTTPMiddleware):
             return response
 
         # Foydalanuvchi kirganmi? (get_current_user request.state.auth_user'ni to'ldiradi)
+        # XAVFSIZLIK (fail-closed): user aniqlanmasa yoki see_cost=False bo'lsa
+        # javobdan tannarx maydonlarini filtrlab tashlaymiz. Auth javobgarligi
+        # endpoint'da (401/403 o'zi qaytaradi).
         user = getattr(request.state, "auth_user", None)
-        if user is None or getattr(user, "see_cost", True):
+        if user is not None and getattr(user, "see_cost", True):
             return response
 
         # Javob tanasini o'qib, tannarx maydonlarini olib tashlash
@@ -61,7 +79,11 @@ class CostVisibilityMiddleware(BaseHTTPMiddleware):
         except (ValueError, UnicodeDecodeError):
             return response
 
-        cleaned = strip_cost_fields(payload, user)
+        # user=None bo'lsa (anonim) — qattiq filtr; aks holda rol bo'yicha
+        if user is None:
+            cleaned = _strip_cost_fields_anon(payload)
+        else:
+            cleaned = strip_cost_fields(payload, user)
         new_body = json.dumps(cleaned, ensure_ascii=False).encode("utf-8")
         headers = dict(response.headers)
         headers.pop("content-length", None)

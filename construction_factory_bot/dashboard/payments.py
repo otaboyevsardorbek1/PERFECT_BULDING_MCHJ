@@ -111,12 +111,27 @@ def invoice_to_dict(inv: models.PaymentInvoice) -> dict:
 
 def _confirm_payment(db: Session, invoice: models.PaymentInvoice, *, gateway: str):
     """To'lov tasdiqlanganda: Payment yozuvi + mijoz qarzini yopish
-    yoki web-do'kon buyurtmasini yakunlash (shop_order_id bo'lsa)."""
-    if invoice.status == "paid":
-        return  # ikki marta tasdiqlashni oldini olish (idempotent)
-    invoice.status = "paid"
-    invoice.paid_at = datetime.utcnow()
+    yoki web-do'kon buyurtmasini yakunlash (shop_order_id bo'lsa).
+
+    XAVFSIZLIK: bir nechta worker/webhook parallel kelishi mumkin.
+    Shuning uchun status'ni ATOMIK shartli UPDATE orqali o'zgartiramiz —
+    faqat BITTA chaqiruv "1" qaytaradi, qolganlari "0" va darhol qaytadi.
+    """
+    # 1. ATOMIK holat o'zgartirish: WHERE id=? AND status != 'paid'
+    now = datetime.utcnow()
+    updated = db.query(models.PaymentInvoice).filter(
+        models.PaymentInvoice.id == invoice.id,
+        models.PaymentInvoice.status != "paid",
+    ).update(
+        {"status": "paid", "paid_at": now},
+        synchronize_session=False,
+    )
     db.commit()
+    if not updated:
+        # Boshqa worker allaqachon tasdiqlagan — idempotent qaytamiz
+        db.refresh(invoice)
+        return
+    db.refresh(invoice)
 
     method = "payme" if gateway == "payme" else "click"
 

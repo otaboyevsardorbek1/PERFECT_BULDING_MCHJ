@@ -8,13 +8,42 @@ from dotenv import load_dotenv
 # .env faylini yuklash
 load_dotenv()
 
+
+def _real_env(name: str, default: str = "") -> str:
+    """Muhit o'zgaruvchisini o'qish; `.env.example` dagi placeholder
+    qiymatlarni ("your_...", "changeme", "<...>") sozlanmagan deb hisoblash.
+
+    Bu, ayniqsa, to'lov kalitlari va backup paroli uchun muhim: placeholder
+    haqiqiy kalit sifatida ishlatilsa, buzuq to'lov havolasi yoki noto'g'ri
+    shifrlangan backup hosil bo'ladi.
+    """
+    value = (os.getenv(name, default) or "").strip()
+    if not value:
+        return default
+    lowered = value.lower()
+    if lowered.startswith((
+        "your_", "your-", "change_me", "changeme", "placeholder",
+        "example", "<",
+    )):
+        return ""
+    return value
+
+
 # =============== BOT SOZLAMALARI ===============
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN .env faylida belgilanishi shart!")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Eslatma: import paytida raise qilmaymiz — testlar, CLI va
+# migratsiyalar ham bu modulni import qiladi. Bot ishga tushganda
+# BOT_TOKEN yo'q bo'lsa, Bot() konstruktori xato beradi.
 
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(','))) if os.getenv("ADMIN_IDS") else []
 MAIN_ADMIN_ID = int(os.getenv("MAIN_ADMIN_ID", ADMIN_IDS[0] if ADMIN_IDS else 0))
+
+# v4.x XAVFSIZLIK: ADMIN_IDS bypass FAQAT quyidagi flag true bo'lsa ishlaydi.
+# Production'da false qoldiring — admin ham /login qilishi shart.
+# Bootstrap uchun bir marta true qilib, admin sessiyasini oching.
+ALLOW_UNLINKED_ADMIN_BYPASS = os.getenv(
+    "ALLOW_UNLINKED_ADMIN_BYPASS", "false"
+).lower() == "true"
 
 # =============== DATABASE SOZLAMALARI ===============
 # PostgreSQL uchun
@@ -308,7 +337,12 @@ BACKUP_UPLOAD_SETTINGS = {
     "s3_prefix": os.getenv("BACKUP_S3_PREFIX", "backups"),  # bucket ichidagi papka
     # UZOQ JOYDAGI nusxalar necha kun saqlanadi (Telegram kanal / S3 bucket).
     # 0 bo'lsa uzoq joyda tozalash o'chiriladi. Berilmasa BACKUP_KEEP_DAYS ishlatiladi.
-    "remote_keep_days": int(os.getenv("BACKUP_REMOTE_KEEP_DAYS", "") or BACKUP_SETTINGS["keep_days"]),
+    # v4.x: "0" ham to'g'ri qiymat bo'lishi kerak (avval "" or DEFAULT bo'lgan).
+    "remote_keep_days": (
+        int(os.getenv("BACKUP_REMOTE_KEEP_DAYS"))
+        if os.getenv("BACKUP_REMOTE_KEEP_DAYS", "").strip() != ""
+        else int(BACKUP_SETTINGS["keep_days"])
+    ),
 }
 
 # =============== BACKUP SHIFRLASH (chiquvchi nusxalar) ===============
@@ -316,7 +350,7 @@ BACKUP_UPLOAD_SETTINGS = {
 # (PBKDF2 + AES — Fernet) va shifrlangan holatda Telegram/S3 ga yuklanadi.
 # Lokal nusxa (backups/) shifrlanmaydi — parol faqat .env da saqlanadi.
 # Shifrlangan faylni ochish: utils/backup.py decrypt_backup_file()
-BACKUP_ENCRYPTION_PASSWORD = os.getenv("BACKUP_ENCRYPTION_PASSWORD", "")
+BACKUP_ENCRYPTION_PASSWORD = _real_env("BACKUP_ENCRYPTION_PASSWORD")
 
 # =============== LIMITLAR ===============
 LIMITS = {
@@ -393,12 +427,12 @@ WEB_SETTINGS = {
 
 # =============== ONLAYN TO'LOVLAR (Click / Payme) ===============
 # Click: https://my.click.uz kabineti -> Service ID va Secret key (SHOP API ulangan bo'lishi kerak)
-CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "")
-CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "")
-CLICK_SECRET_KEY = os.getenv("CLICK_SECRET_KEY", "")
+CLICK_MERCHANT_ID = _real_env("CLICK_MERCHANT_ID")
+CLICK_SERVICE_ID = _real_env("CLICK_SERVICE_ID")
+CLICK_SECRET_KEY = _real_env("CLICK_SECRET_KEY")
 # Payme: Payme Business kabineti -> Merchant (cashbox) ID va kalit (parol)
-PAYME_MERCHANT_ID = os.getenv("PAYME_MERCHANT_ID", "")
-PAYME_KEY = os.getenv("PAYME_KEY", "")
+PAYME_MERCHANT_ID = _real_env("PAYME_MERCHANT_ID")
+PAYME_KEY = _real_env("PAYME_KEY")
 # Mijoz to'lovdan keyin qaytadigan sahifa (ixtiyoriy, masalan web dashboard)
 PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", "")
 
@@ -413,6 +447,14 @@ DEBT_REMINDER_DAYS = sorted(
     int(x) for x in os.getenv("DEBT_REMINDER_DAYS", "3,7,14,30").split(",")
     if x.strip().isdigit()
 )
+
+# =============== OMBOR QOLDIQ NAZORATI (OVERSELL HIMOYASI) ===============
+# true — ombor daftarida kirim (ishlab chiqarish/inventarizatsiya/qaytarish)
+# mavjud mahsulot uchun qoldiqdan ortiq sotishga yo'l qo'yilmaydi (TZ talabi).
+# false — nazorat o'chiriladi (faqat eski/import qilingan ma'lumot uchun).
+# Kirim yozuvi umuman bo'lmagan mahsulotlar "kuzatilmaydi" deb hisoblanadi va
+# sotuvga ruxsat beriladi — shu bilan eski bazadagi tovarlar ishlashda davom etadi.
+STRICT_STOCK_CHECK = os.getenv("STRICT_STOCK_CHECK", "true").lower() == "true"
 
 # =============== SEKIN SOTILADIGAN ZAXIRA (SLOW-MOVING STOCK) ===============
 # Tovar/xom ashyo necha kundan beri harakatlanmasa (sotuv, ishlab chiqarish, kirim,
@@ -676,12 +718,12 @@ def get_language_text(key: str, language: str = None) -> str:  # type: ignore
 
 # Konfiguratsiyani tekshirish
 def validate_config():
-    """Konfiguratsiyani tekshirish"""
+    """Konfiguratsiyani tekshirish (bot ishga tushganda chaqiriladi)"""
     
     errors = []
     
     if not BOT_TOKEN:
-        errors.append("BOT_TOKEN belgilanishi shart!")
+        errors.append("BOT_TOKEN belgilanishi shart! (.env faylini tekshiring)")
     
     if not ADMIN_IDS:
         errors.append("ADMIN_IDS kamida bitta admin ID belgilanishi shart!")

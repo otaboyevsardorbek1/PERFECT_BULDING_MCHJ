@@ -41,22 +41,27 @@ logger = logging.getLogger(__name__)
 # EVENT PUBLISHER — operatsiyalarni event sifatida yozish
 # ============================================================
 
-# Global sequence counter (thread-safe yetarli oddiy holat uchun)
-_sequence_counter = 0
-
 # Snapshot: har N ta event'dan keyin snapshot olish
 SNAPSHOT_INTERVAL = 100
 
 
 def _next_sequence(db: Session) -> int:
-    """Keyingi global sequence raqamini olish"""
-    global _sequence_counter
-    if _sequence_counter == 0:
-        # DB'dan eng oxirgi sequence'ni olish
-        result = db.execute(text("SELECT COALESCE(MAX(sequence), 0) FROM events"))
-        _sequence_counter = result.scalar() or 0
-    _sequence_counter += 1
-    return _sequence_counter
+    """Keyingi global sequence raqamini olish.
+
+    v4.x XAVFSIZLIK: global in-memory counter OLIB TASHLANDI.
+    Sabablari:
+    - Multi-process (gunicorn/uvicorn workers) — har bir jarayonning
+      counter'i alohida, bir xil raqam beradi → to'qnashuv.
+    - Restart paytida counter yo'qoladi, lekin DB'da events bor → to'qnashuv.
+    - Bu checksum zanjirini buzadi (prev_checksum noto'g'ri event'ga bog'lanadi).
+
+    Yechim: har chaqiruvda DB'dan MAX(sequence)+1 ni olamiz. Parallel INSERT
+    yuz berganda SQLite/Postgres jadval darajasida lock qo'llaydi va
+    sequence unique bo'lgani uchun (kelajakda UNIQUE constraint bilan)
+    ikkinchisi IntegrityError oladi va retry qiladi.
+    """
+    result = db.execute(text("SELECT COALESCE(MAX(sequence), 0) + 1 FROM events"))
+    return int(result.scalar() or 1)
 
 
 def _compute_checksum(event_data: dict, prev_checksum: Optional[str] = None) -> str:
@@ -457,7 +462,16 @@ def verify_event_integrity(db: Session, from_seq: int = 0, to_seq: Optional[int]
     events = q.order_by(Event.sequence.asc()).all()
     
     broken = []
+    # XAVFSIZLIK: from_seq > 0 bo'lsa, avvalgi event'ning checksumi kerak,
+    # aks holda BARCHA event'lar "buzilgan" deb noto'g'ri ko'rsatiladi.
     prev_checksum = None
+    if from_seq > 0:
+        prev_event = (db.query(Event)
+                      .filter(Event.sequence < from_seq)
+                      .order_by(Event.sequence.desc())
+                      .first())
+        if prev_event:
+            prev_checksum = prev_event.checksum
     
     for event in events:
         expected = _compute_checksum(event.event_data, prev_checksum)

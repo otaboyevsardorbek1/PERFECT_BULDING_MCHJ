@@ -168,3 +168,45 @@ class TestInventoryCheck:
         assert check.system_quantity == 70
         assert check.difference == -5
         assert check.act_created is True
+
+
+class TestLowStockProducts:
+    """TZ (3.1): minimal qoldiq chegarasi — tizim avtomatik ogohlantiradi."""
+
+    def _product(self, db_session, name, stock, min_stock):
+        p = models.Product(name=name, category="sement", unit="qop",
+                           selling_price=12000, production_cost=7000,
+                           min_stock=min_stock, is_active=True)
+        db_session.add(p)
+        db_session.flush()
+        db_session.add(models.WarehouseTransaction(
+            product_id=p.id, quantity=stock,
+            transaction_type=models.TransactionType.PRODUCTION, user_id=1,
+        ))
+        db_session.commit()
+        db_session.refresh(p)
+        return p
+
+    def test_below_minimum_is_reported(self, db_session):
+        p = self._product(db_session, "Low Sement", stock=70, min_stock=100)
+        rows = crud.get_low_stock_products(db_session)
+        assert [r["product"].id for r in rows] == [p.id]
+        assert rows[0]["available"] == 70
+        assert rows[0]["min_stock"] == 100
+
+    def test_above_minimum_is_not_reported(self, db_session):
+        self._product(db_session, "Yetarli Sement", stock=200, min_stock=100)
+        assert crud.get_low_stock_products(db_session) == []
+
+    def test_untracked_product_is_not_reported(self, db_session):
+        """Kirim yozuvi yo'q eski mahsulot qoldig'i noma'lum — ogohlantirilmaydi."""
+        p = models.Product(name="Eski Sement", category="sement", unit="qop",
+                           selling_price=12000, production_cost=7000,
+                           min_stock=100, is_active=True)
+        db_session.add(p)
+        db_session.commit()
+        assert crud.get_low_stock_products(db_session) == []
+
+    def test_zero_min_stock_is_ignored(self, db_session):
+        self._product(db_session, "Chegarasiz Sement", stock=0, min_stock=0)
+        assert crud.get_low_stock_products(db_session) == []

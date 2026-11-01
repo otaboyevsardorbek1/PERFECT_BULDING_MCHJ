@@ -43,6 +43,34 @@ def _wh_rows(db_session):
 
 # =============== 1) SOTUV YOZUVLARI (create_sale_record) ===============
 class TestCreateSaleRecord:
+    def test_oversell_tracked_stock_rejected(self, db_session, product, customer):
+        """Omborda kirim yozuvi bor mahsulotdan ortiq sotish bloklanadi (TZ)."""
+        db_session.add(models.WarehouseTransaction(
+            product_id=product.id, quantity=5,
+            transaction_type=models.TransactionType.PRODUCTION,
+            user_id=1, user_name="Test",
+        ))
+        db_session.commit()
+
+        with pytest.raises(ValueError) as exc:
+            crud.create_sale_record(
+                db_session, product_id=product.id, quantity=6, unit_price=12000,
+                total_amount=72_000, payment_method="cash",
+                customer=customer, customer_name=customer.name,
+                user_id=7, user_name="Sotuvchi",
+            )
+        assert "yetarli emas" in str(exc.value)
+        assert db_session.query(models.Sale).count() == 0
+
+    def test_legacy_untracked_product_can_be_sold(self, db_session, product):
+        """Kirim yozuvi yo'q eski/import mahsulot qoldig'i noma'lum — sotiladi."""
+        sale = crud.create_sale_record(
+            db_session, product_id=product.id, quantity=3, unit_price=12000,
+            total_amount=36_000, payment_method="cash",
+            customer_name="Eski mijoz", user_id=7, user_name="Sotuvchi",
+        )
+        assert sale.id is not None
+
     def test_pure_nasiya_full_credit(self, db_session, product, customer):
         """To'liq nasiya: avans yo'q, butun summa qarzga, ball berilmaydi"""
         sale = crud.create_sale_record(

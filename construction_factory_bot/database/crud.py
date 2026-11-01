@@ -1,9 +1,38 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, func, extract
+from sqlalchemy import and_, or_, desc, func
 from datetime import datetime, timedelta, date
 from typing import List, Optional, Dict, Any
 import uuid
 from . import models
+
+
+def _next_document_number(db: Session, model, column, prefix: str,
+                          date_format: str = "%Y%m%d", width: int = 4,
+                          now: datetime = None) -> str:
+    """Hujjat raqamini UTC vaqti bo'yicha, mavjud eng katta suffixdan davom ettirib beradi.
+
+    `.count() + 1` ishlatish o'chirilgan yozuvlardan keyin dublikat beradi.
+    Shuningdek `created_at`/`opened_at` UTC'da saqlanadi — shuning uchun
+    raqam ham UTC sana bilan mos bo'lishi shart.
+    """
+    now = now or datetime.utcnow()
+    day_prefix = f"{prefix}{now.strftime(date_format)}-"
+    last = db.query(column).filter(column.like(f"{day_prefix}%")).order_by(
+        column.desc()
+    ).first()
+    seq = 1
+    if last:
+        try:
+            seq = int(str(last[0]).rsplit("-", 1)[1]) + 1
+        except (TypeError, ValueError, IndexError):
+            seq = 1
+    candidate = f"{day_prefix}{seq:0{width}d}"
+    # Parallel yozuv yoki noto'g'ri eski raqam bo'lsa — keyingisini tanlaymiz
+    while db.query(model.id).filter(column == candidate).first():
+        seq += 1
+        candidate = f"{day_prefix}{seq:0{width}d}"
+    return candidate
+
 
 # =============== Xom ashyo CRUD ===============
 def create_raw_material(db: Session, material_data: Dict) -> models.RawMaterial:
@@ -111,16 +140,12 @@ def get_related_products(db: Session, product_id: int, limit: int = 5) -> List[m
 # =============== Ishlab chiqarish buyurtmalari CRUD ===============
 def create_production_order(db: Session, order_data: Dict) -> models.ProductionOrder:
     """Yangi ishlab chiqarish buyurtmasi yaratish"""
-    # Order raqamini yaratish
-    today = datetime.now()
-    order_count = db.query(models.ProductionOrder).filter(
-        extract('year', models.ProductionOrder.created_at) == today.year,
-        extract('month', models.ProductionOrder.created_at) == today.month
-    ).count() + 1
-    
-    order_number = f"PO-{today.strftime('%Y%m')}-{order_count:04d}"
-    order_data['order_number'] = order_number
-    
+    # Order raqami: PO-YYYYMM-NNNN (UTC sana, mavjud raqamdan davom)
+    order_data['order_number'] = _next_document_number(
+        db, models.ProductionOrder, models.ProductionOrder.order_number,
+        "PO-", date_format="%Y%m",
+    )
+
     order = models.ProductionOrder(**order_data)
     db.add(order)
     db.commit()
@@ -392,6 +417,16 @@ def create_sale_record(db: Session, *, product_id: int, quantity: float,
     """
     Sotuvni jadvalga yozish (confirm_sale handler bilan bir xil hisob-kitob).
 
+    XAVFSIZLIK (v4.x): OVERSELL HIMOYASI
+    ------------------------------------
+    Ikki parallel sotuvchi bir vaqtning o'zida bir xil mahsulotni so'rashi
+    mumkin. Avval "available" ni o'qib, keyin yozish RACE CONDITION beradi.
+    Yechim: SQLite'da write-lock (BEGIN IMMEDIATE) bilan atomik tekshirish,
+    so'ngra barcha yozuvlarni BITTA commit'da amalga oshirish.
+
+    Mavjud tranzaksiya mavjud bo'lsa (chaqiruvchi ochgan), yangi tranzaksiya
+    ochmaymiz - DB API bu holatda xatolik bermaydi.
+
     - Chegirma qo'llanadi: final_total = total_amount - discount_amount
     - Nasiya (payment_method="credit"): advance qismi darhol to'lanadi,
       qolgan qism mijoz qarziga yoziladi (30 kun muddat)
@@ -404,6 +439,54 @@ def create_sale_record(db: Session, *, product_id: int, quantity: float,
       (to'liq naqd/karta to'lov ham, nasiya avansi ham)
     - To'lov yozuvi, ombor harakati va audit log yaratiladi
     """
+    from sqlalchemy import text as _sa_text
+
+    is_sqlite = False
+    try:
+        is_sqlite = db.bind.dialect.name == "sqlite"
+    except Exception:
+        is_sqlite = False
+
+    # SQLite'da write-lock olish (parallel o'qish uchun, boshqa yozuvchi kutadi)
+    lock_acquired = False
+    if is_sqlite and not db.in_transaction():
+        try:
+            db.execute(_sa_text("BEGIN IMMEDIATE"))
+            lock_acquired = True
+        except Exception:
+            # Tranzaksiya allaqachon faol bo'lsa - jim o'tamiz
+            lock_acquired = False
+
+    # OVERSELL tekshiruvi: faqat ombor daftarida kirim yozuvi bor mahsulotlar
+    # uchun. Kirim yo'q (eski/import) mahsulot qoldig'i noma'lum — sotuvga ruxsat.
+    try:
+        from config import STRICT_STOCK_CHECK
+    except Exception:
+        STRICT_STOCK_CHECK = True
+
+    if STRICT_STOCK_CHECK:
+        try:
+            if is_product_stock_tracked(db, product_id):
+                available = get_available_product_qty(db, product_id)
+                if available + 1e-9 < float(quantity):
+                    raise ValueError(
+                        f"Omborda yetarli emas! Mavjud: {available:,.0f}, "
+                        f"so'ralgan: {float(quantity):,.0f}. "
+                        f"Iltimos, qoldiqni tekshiring."
+                    )
+        except ValueError:
+            if lock_acquired:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+            raise
+        except Exception:
+            # Qoldiqni hisoblashda kutilmagan xato — sotuvni to'xtatmaymiz
+            # (backward-compat), lekin mavjud tranzaksiyani buzmaymiz.
+            pass
+
+
     final_total = total_amount - (discount_amount or 0)
 
     if payments:
@@ -438,7 +521,7 @@ def create_sale_record(db: Session, *, product_id: int, quantity: float,
         sale_payment_method = payment_method
 
     if not invoice_number:
-        invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+        invoice_number = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
 
     sale = models.Sale(
         invoice_number=invoice_number,
@@ -846,13 +929,11 @@ def create_return_act(db: Session, *, sale_id: int, quantity: float,
 
     customer = db.query(models.Customer).filter(models.Customer.id == sale.customer_id).first() if sale.customer_id else None
 
-    # Akt raqami: RTN-YYYYMM-NNNN
-    now = datetime.now()
-    act_count = db.query(models.ReturnAct).filter(
-        extract("year", models.ReturnAct.created_at) == now.year,
-        extract("month", models.ReturnAct.created_at) == now.month,
-    ).count() + 1
-    act_number = f"RTN-{now.strftime('%Y%m')}-{act_count:04d}"
+    # Akt raqami: RTN-YYYYMM-NNNN (UTC sana)
+    act_number = _next_document_number(
+        db, models.ReturnAct, models.ReturnAct.act_number,
+        "RTN-", date_format="%Y%m",
+    )
 
     # Almashtirish: yangi mahsulot sotuvi (trade-in chegirma bilan)
     new_sale = None
@@ -1058,12 +1139,10 @@ def create_supplier_delivery(db: Session, supplier_id: int, raw_material_id: int
     if not supplier or not material:
         raise ValueError("Yetkazib beruvchi yoki xom ashyo topilmadi")
 
-    today = datetime.now()
-    act_count = db.query(models.SupplierDelivery).filter(
-        extract("year", models.SupplierDelivery.created_at) == today.year,
-        extract("month", models.SupplierDelivery.created_at) == today.month,
-    ).count() + 1
-    act_number = f"QA-{today.strftime('%Y%m')}-{act_count:04d}"
+    act_number = _next_document_number(
+        db, models.SupplierDelivery, models.SupplierDelivery.act_number,
+        "QA-", date_format="%Y%m",
+    )
 
     accepted_qty = quantity_received if quality_status == "qabul_qilingan" else \
         (quantity_received * 0.5 if quality_status == "qisman" else 0)
@@ -1087,7 +1166,7 @@ def create_supplier_delivery(db: Session, supplier_id: int, raw_material_id: int
 
     # Qabul qilingan miqdor zaxiraga qo'shiladi
     material.current_stock = (material.current_stock or 0) + accepted_qty
-    material.last_purchase_date = datetime.now()
+    material.last_purchase_date = datetime.utcnow()
     material.supplier = supplier.name
     material.supplier_id = supplier.id
 
@@ -1260,6 +1339,53 @@ def get_available_product_qty(db: Session, product_id: int) -> float:
     return (produced + returned - sold - reserved + adjusted)
 
 
+def is_product_stock_tracked(db: Session, product_id: int) -> bool:
+    """Mahsulot ombor daftarida kuzatiladimi?
+
+    Kirim yozuvi (PRODUCTION / INVENTORY / RETURN) mavjud bo'lsa, qoldiq
+    haqiqiy hisoblanadi va ortiqcha sotish bloklanadi. Faqat SALE yozuvi
+    bo'lgan yoki umuman harakatsiz mahsulot eski/import qilingan deb
+    hisoblanadi — uning qoldig'i noma'lum, shuning uchun sotuvga ruxsat
+    beriladi (aks holda eski baza butunlay to'xtab qoladi).
+    """
+    return db.query(models.WarehouseTransaction.id).filter(
+        models.WarehouseTransaction.product_id == product_id,
+        models.WarehouseTransaction.transaction_type.in_((
+            models.TransactionType.PRODUCTION,
+            models.TransactionType.INVENTORY,
+            models.TransactionType.RETURN,
+        )),
+    ).first() is not None
+
+
+def get_low_stock_products(db: Session) -> List[Dict]:
+    """Minimal qoldiq chegarasidan pastga tushgan tayyor mahsulotlar.
+
+    TZ (3.1): har bir mahsulot uchun `min_stock` — tizim avtomatik
+    ogohlantiradi. Faqat ombor daftarida kirim yozuvi bor (qoldig'i
+    ishonchli hisoblanadigan) mahsulotlar qaytariladi; eski/import
+    mahsulotlar noto'g'ri ogohlantirish bermasligi uchun chetlanadi.
+    """
+    products = db.query(models.Product).filter(
+        models.Product.is_active == True,
+        models.Product.min_stock > 0,
+    ).order_by(models.Product.name).all()
+    result = []
+    for product in products:
+        if not is_product_stock_tracked(db, product.id):
+            continue
+        available = get_available_product_qty(db, product.id)
+        if available <= (product.min_stock or 0):
+            result.append({
+                "product": product,
+                "available": available,
+                "min_stock": product.min_stock or 0,
+            })
+    return result
+
+
+
+
 def create_reservation(db: Session, product_id: int, quantity: float,
                        expires_in_hours: float = 2.0,
                        customer_id: int = None, customer_name: str = None,
@@ -1276,7 +1402,7 @@ def create_reservation(db: Session, product_id: int, quantity: float,
         return {"error": f"Omborda yetarli emas (mavjud: {available:,.0f} {product.unit})"}
 
     reservation = models.Reservation(
-        reservation_code=f"RSV-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        reservation_code=f"RSV-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
         product_id=product_id,
         quantity=quantity,
         customer_id=customer_id,
@@ -1402,7 +1528,7 @@ def create_inventory_check(db: Session, warehouse: str, item_type: str, item_id:
         raise ValueError("Element topilmadi")
 
     check = models.InventoryCheck(
-        check_number=f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        check_number=f"INV-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
         warehouse=warehouse,
         raw_material_id=mat_id,
         product_id=prod_id,
@@ -1630,12 +1756,10 @@ def create_delivery(db: Session, *, sale_id: int, driver_id: int,
     if qty <= 0 or qty > remaining + 1e-9:
         raise ValueError(f"Yetkaziladigan miqdor noto'g'ri (qoldiq: {remaining:,.0f})")
 
-    now = datetime.now()
-    d_count = db.query(models.Delivery).filter(
-        extract("year", models.Delivery.created_at) == now.year,
-        extract("month", models.Delivery.created_at) == now.month,
-    ).count() + 1
-    number = f"DLV-{now.strftime('%Y%m')}-{d_count:04d}"
+    number = _next_document_number(
+        db, models.Delivery, models.Delivery.delivery_number,
+        "DLV-", date_format="%Y%m",
+    )
 
     delivery = models.Delivery(
         delivery_number=number,
@@ -2015,14 +2139,11 @@ SHOP_METHOD_LABELS = {
 
 
 def _new_shop_order_number(db: Session) -> str:
-    """SHOP-YYYYMMDD-NNNN formatida yagona buyurtma raqami"""
-    now = datetime.now()
-    count = db.query(models.ShopOrder).filter(
-        extract("year", models.ShopOrder.created_at) == now.year,
-        extract("month", models.ShopOrder.created_at) == now.month,
-        extract("day", models.ShopOrder.created_at) == now.day,
-    ).count() + 1
-    return f"SHOP-{now.strftime('%Y%m%d')}-{count:04d}"
+    """SHOP-YYYYMMDD-NNNN formatida yagona buyurtma raqami (UTC sana)"""
+    return _next_document_number(
+        db, models.ShopOrder, models.ShopOrder.order_number,
+        "SHOP-", width=4,
+    )
 
 
 def _shop_phone(raw: str) -> str:
@@ -2393,21 +2514,19 @@ def create_cash_shift(db: Session, *, employee_id: int = None,
         raise ValueError("Boshlang'ich summa manfiy bo'lishi mumkin emas")
 
     employee = db.query(models.Employee).filter(models.Employee.id == employee_id).first() if employee_id else None
-    now = datetime.now()
-    seq = db.query(models.CashShift).filter(
-        extract("year", models.CashShift.opened_at) == now.year,
-        extract("month", models.CashShift.opened_at) == now.month,
-        extract("day", models.CashShift.opened_at) == now.day,
-    ).count() + 1
+    now = datetime.utcnow()
 
     shift = models.CashShift(
-        shift_number=f"SHT-{now.strftime('%Y%m%d')}-{seq:03d}",
+        shift_number=_next_document_number(
+            db, models.CashShift, models.CashShift.shift_number,
+            "SHT-", width=3, now=now,
+        ),
         cashier_id=employee.id if employee else None,
         cashier_name=employee.full_name if employee else (employee_name or "Kassir"),
         opening_balance=opening_balance,
         status="ochiq",
         note=note,
-        opened_at=datetime.utcnow(),
+        opened_at=now,
     )
     db.add(shift)
     try:
@@ -2609,13 +2728,11 @@ def create_production_qc(db: Session, *, order_id: int,
     accepted = round(total_qty - rejected, 2)
     rejected = round(rejected, 2)
 
-    # Akt raqami: SQC-YYYYMM-NNNN
-    now = datetime.now()
-    act_count = db.query(models.ProductionQC).filter(
-        extract("year", models.ProductionQC.created_at) == now.year,
-        extract("month", models.ProductionQC.created_at) == now.month,
-    ).count() + 1
-    act_number = f"SQC-{now.strftime('%Y%m')}-{act_count:04d}"
+    # Akt raqami: SQC-YYYYMM-NNNN (UTC sana)
+    act_number = _next_document_number(
+        db, models.ProductionQC, models.ProductionQC.act_number,
+        "SQC-", date_format="%Y%m",
+    )
 
     product = db.query(models.Product).filter(
         models.Product.id == order.product_id
@@ -2836,10 +2953,10 @@ def get_expense_totals(db: Session, days: int = 30) -> Dict:
 # =============== YIG'ISH VARAQASI (Picking list, TZ: 4-modul) ===============
 def create_picking_list(db: Session, data: Dict) -> models.PickingList:
     if not data.get("picking_number"):
-        prefix = "PKG-%s-" % datetime.utcnow().strftime("%Y%m%d")
-        count = db.query(models.PickingList).filter(
-            models.PickingList.picking_number.like(prefix + "%")).count() + 1
-        data["picking_number"] = "%s%03d" % (prefix, count)
+        data["picking_number"] = _next_document_number(
+            db, models.PickingList, models.PickingList.picking_number,
+            "PKG-", width=3,
+        )
     item = models.PickingList(**data)
     db.add(item)
     db.commit()

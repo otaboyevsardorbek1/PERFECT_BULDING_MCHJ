@@ -22,6 +22,17 @@ from database.session import get_db
 router = APIRouter(prefix="/api/shop", tags=["shop"])
 
 
+def _gateway_configured(gateway: str) -> bool:
+    """To'lov shlyuzi kalitlari haqiqiy sozlanganmi (placeholder emas)."""
+    from dashboard import payments as pay
+    gateway = (gateway or "").lower()
+    if gateway == "click":
+        return bool(pay.CLICK_MERCHANT_ID and pay.CLICK_SERVICE_ID)
+    if gateway == "payme":
+        return bool(pay.PAYME_MERCHANT_ID)
+    return False
+
+
 def _catalog_product(db: Session, p: models.Product) -> dict:
     return {
         "id": p.id,
@@ -102,6 +113,16 @@ def shop_create_order(data: dict, db: Session = Depends(get_db)):
             from dashboard.payments import build_payment_links, create_payment_invoice
             gateway = order.online_gateway or method
             amount = order.online_amount if method == "mixed" else order.total_amount
+            # Shlyuz sozlanmagan — yaratilgan kutilayotgan buyurtmani qaytarib
+            # olamiz (orphan yozuv qolmasin), schyot ochmaymiz.
+            if not _gateway_configured(gateway):
+                db.delete(order)
+                db.commit()
+                raise HTTPException(
+                    503,
+                    f"{gateway.upper()} to'lov sozlanmagan (kalit yo'q). "
+                    "Iltimos naqd usulini tanlang yoki boshqa to'lovni sinang.",
+                )
             invoice = create_payment_invoice(
                 db,
                 gateway=gateway,

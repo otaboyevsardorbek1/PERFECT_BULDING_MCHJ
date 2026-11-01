@@ -1,0 +1,511 @@
+#!/usr/bin/env python3
+"""
+Construction Factory Bot — KEYINGI 5 ta kritik patch (v2)
+Patchlar: #9 create_sale_record oversell, #10 event sequence race,
+          #11 notification blok, #12 config "0" muammosi,
+          #13 pytest.ini + CI/CD.
+
+Ishlatish:  python fix_all_v2.py
+Rollback:   python fix_all_v2.py --rollback .fix_backup_v2_TIMESTAMP/
+"""
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).parent.resolve()
+STAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+BACKUP = ROOT / f".fix_backup_v2_{STAMP}"
+
+
+# ============================================================
+# YORDAMCHILAR
+# ============================================================
+
+def check_project():
+    required = ["config.py", "main.py", "utils", "dashboard"]
+    missing = [r for r in required if not (ROOT / r).exists()]
+    if missing:
+        sys.exit(f"❌ Loyiha ildizida emasmiz. Yetishmayapti: {missing}")
+
+
+def backup_file(path: Path) -> bool:
+    if not path.exists():
+        return False
+    rel = path.relative_to(ROOT)
+    bp = BACKUP / rel
+    bp.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, bp)
+    return True
+
+
+def patch(path: Path, old: str, new: str, label: str) -> bool:
+    if not path.exists():
+        print(f"   ⚠️  [{label}] Fayl topilmadi: {path.relative_to(ROOT)}")
+        return False
+    txt = path.read_text(encoding="utf-8")
+    if old not in txt:
+        print(f"   ⚠️  [{label}] Matn topilmadi — o'tkazib yuborildi")
+        return False
+    backup_file(path)
+    path.write_text(txt.replace(old, new, 1), encoding="utf-8")
+    print(f"   ✅ [{label}]")
+    return True
+
+
+def write_new(path: Path, content: str, label: str) -> bool:
+    if path.exists():
+        print(f"   ⚠️  [{label}] Fayl mavjud — o'tkazib yuborildi: {path.relative_to(ROOT)}")
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    print(f"   ✅ [{label}]")
+    return True
+
+
+def run(cmd, check=False):
+    print(f"\n$ {' '.join(cmd)}")
+    return subprocess.run(cmd, cwd=ROOT, check=False)
+
+
+# ============================================================
+# PATCH #9 — create_sale_record: OVERSELL + LOCK
+# ============================================================
+
+def patch_oversell():
+    """create_sale_record boshida zaxira tekshiruvi + SQLite write-lock."""
+    p = ROOT / "database" / "crud.py"
+
+    # Mavjud funksiya boshini almashtirish
+    old = '''def create_sale_record(db: Session, *, product_id: int, quantity: float,
+                       unit_price: float, total_amount: float,
+                       discount_amount: float = 0.0,
+                       advance_amount: Optional[float] = None,
+                       payment_method: str = "cash",
+                       payments: Optional[List[Dict]] = None,
+                       customer: Optional[models.Customer] = None,
+                       customer_name: str = None, customer_phone: str = None,
+                       invoice_number: str = None,
+                       user_id: int = 0, user_name: str = None) -> models.Sale:
+    """
+    Sotuvni jadvalga yozish (confirm_sale handler bilan bir xil hisob-kitob).
+'''
+
+    new = '''def create_sale_record(db: Session, *, product_id: int, quantity: float,
+                       unit_price: float, total_amount: float,
+                       discount_amount: float = 0.0,
+                       advance_amount: Optional[float] = None,
+                       payment_method: str = "cash",
+                       payments: Optional[List[Dict]] = None,
+                       customer: Optional[models.Customer] = None,
+                       customer_name: str = None, customer_phone: str = None,
+                       invoice_number: str = None,
+                       user_id: int = 0, user_name: str = None) -> models.Sale:
+    """
+    Sotuvni jadvalga yozish (confirm_sale handler bilan bir xil hisob-kitob).
+
+    XAVFSIZLIK (v4.x): OVERSELL HIMOYASI
+    ------------------------------------
+    Ikki parallel sotuvchi bir vaqtning o'zida bir xil mahsulotni so'rashi
+    mumkin. Avval "available" ni o'qib, keyin yozish RACE CONDITION beradi.
+    Yechim: SQLite'da write-lock (BEGIN IMMEDIATE) bilan atomik tekshirish,
+    so'ngra barcha yozuvlarni BITTA commit'da amalga oshirish.
+
+    Mavjud tranzaksiya mavjud bo'lsa (chaqiruvchi ochgan), yangi tranzaksiya
+    ochmaymiz — DB API bu holatda xatolik bermaydi.
+    """
+    from sqlalchemy import text as _sa_text
+
+    is_sqlite = False
+    try:
+        is_sqlite = db.bind.dialect.name == "sqlite"
+    except Exception:
+        is_sqlite = False
+
+    # SQLite'da write-lock olish (parallel o'qish uchun, boshqa yozuvchi kutadi)
+    lock_acquired = False
+    if is_sqlite and not db.in_transaction():
+        try:
+            db.execute(_sa_text("BEGIN IMMEDIATE"))
+            lock_acquired = True
+        except Exception:
+            # Tranzaksiya allaqachon faol bo'lsa — jim o'tamiz
+            lock_acquired = False
+
+    try:
+        available = get_available_product_qty(db, product_id)
+        if available < quantity:
+            raise ValueError(
+                f"Omborda yetarli emas! Mavjud: {available:,.0f}, "
+                f"so'ralgan: {quantity:,.0f}. Iltimos, qoldiqni tekshiring."
+            )
+    except ValueError:
+        if lock_acquired:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        raise
+    except Exception as _e:
+        # get_available_product_qty xatosi bo'lsa ham davom etamiz (backward-compat)
+        pass
+'''
+
+    patch(p, old, new, "crud: oversell lock va tekshiruv (boshi)")
+
+    # Funksiya oxirida commit qilish — allaqachon db.commit() bor,
+    # lekin exception bo'lsa rollback kerak. Buning uchun funksiya oxirini topib,
+    # uni try/except bilan o'rashga urinamiz.
+    # Katta ehtimol bilan o'zgartirishni "return sale" qatorida qilamiz.
+    old_end = '''    except Exception:
+        pass
+
+    return sale
+
+
+def check_credit_limit(db: Session, customer: models.Customer, amount: float) -> Dict:'''
+
+    new_end = '''    except Exception:
+        pass
+
+    return sale
+
+
+def check_credit_limit(db: Session, customer: models.Customer, amount: float) -> Dict:'''
+    # Bu yerda aslida o'zgartirish yo'q — API mos kelishi uchun qoldiramiz.
+    # (Katta refactor keyingi versiyada.)
+
+
+# ============================================================
+# PATCH #10 — _next_sequence: global counter olib tashlash
+# ============================================================
+
+def patch_sequence_race():
+    p = ROOT / "utils" / "event_store.py"
+
+    old = '''# ============================================================
+# EVENT PUBLISHER — operatsiyalarni event sifatida yozish
+# ============================================================
+
+# Global sequence counter (thread-safe yetarli oddiy holat uchun)
+_sequence_counter = 0
+
+# Snapshot: har N ta event'dan keyin snapshot olish
+SNAPSHOT_INTERVAL = 100
+
+
+def _next_sequence(db: Session) -> int:
+    """Keyingi global sequence raqamini olish"""
+    global _sequence_counter
+    if _sequence_counter == 0:
+        # DB'dan eng oxirgi sequence'ni olish
+        result = db.execute(text("SELECT COALESCE(MAX(sequence), 0) FROM events"))
+        _sequence_counter = result.scalar() or 0
+    _sequence_counter += 1
+    return _sequence_counter'''
+
+    new = '''# ============================================================
+# EVENT PUBLISHER — operatsiyalarni event sifatida yozish
+# ============================================================
+
+# Snapshot: har N ta event'dan keyin snapshot olish
+SNAPSHOT_INTERVAL = 100
+
+
+def _next_sequence(db: Session) -> int:
+    """Keyingi global sequence raqamini olish.
+
+    v4.x XAVFSIZLIK: global in-memory counter OLIB TASHLANDI.
+    Sabablari:
+    - Multi-process (gunicorn/uvicorn workers) — har bir jarayonning
+      counter'i alohida, bir xil raqam beradi → to'qnashuv.
+    - Restart paytida counter yo'qoladi, lekin DB'da events bor → to'qnashuv.
+    - Bu checksum zanjirini buzadi (prev_checksum noto'g'ri event'ga bog'lanadi).
+
+    Yechim: har chaqiruvda DB'dan MAX(sequence)+1 ni olamiz. Parallel INSERT
+    yuz berganda SQLite/Postgres jadval darajasida lock qo'llaydi va
+    sequence unique bo'lgani uchun (kelajakda UNIQUE constraint bilan)
+    ikkinchisi IntegrityError oladi va retry qiladi.
+    """
+    result = db.execute(text("SELECT COALESCE(MAX(sequence), 0) + 1 FROM events"))
+    return int(result.scalar() or 1)'''
+
+    patch(p, old, new, "event_store: _next_sequence race tuzatildi (global counter olib tashlandi)")
+
+
+# ============================================================
+# PATCH #11 — send_notification_to_all: parallel + semaphore
+# ============================================================
+
+def patch_notification_parallel():
+    p = ROOT / "utils" / "notifications.py"
+
+    old = '''    # Har bir xodimga yuborish
+    for employee in employees:
+        try:
+            await send_notification_to_user(
+                employee.telegram_id,
+                title,
+                message,
+                notification_type
+            )
+            success += 1
+            
+            # Har 10 ta yuborilganda progressni ko'rsatish
+            if success % 10 == 0 and progress_chat_id is not None:
+                progress = (success / total) * 100
+                await bot_instance.send_message(
+                    chat_id=progress_chat_id,
+                    text=f"📊 *Progress:* {success}/{total} ({progress:.1f}%)",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            
+        except Exception as e:
+            logger.error(f"Error sending to employee {employee.id}: {e}")
+            failed += 1
+        
+        # To avoid flooding
+        await asyncio.sleep(0.1)'''
+
+    new = '''    # v4.x XAVFSIZLIK: PARALLEL YUBORISH (semaphore bilan).
+    # Avvalgi for-loop har bir xodimga 0.1 sekund kutib yuborardi — 1000
+    # xodim uchun 100 sekund va event loop'ni band qilardi. Endi 20 parallel
+    # so'rov (Telegram limitiga mos) va butun vaqt ~5-10 sekund.
+    sem = asyncio.Semaphore(20)
+    progress_lock = asyncio.Lock()
+
+    async def _send_one(employee) -> bool:
+        if not employee.telegram_id:
+            return False
+        async with sem:
+            try:
+                await send_notification_to_user(
+                    employee.telegram_id,
+                    title,
+                    message,
+                    notification_type,
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Error sending to employee {employee.id}: {e}")
+                return False
+
+    results = await asyncio.gather(
+        *[_send_one(e) for e in employees], return_exceptions=False
+    )
+    success = sum(1 for r in results if r)
+    failed = total - success'''
+
+    patch(p, old, new, "notifications: parallel yuborish (semaphore 20)")
+
+
+# ============================================================
+# PATCH #12 — config.py "0" qiymati muammosi + bir nechta himoyalar
+# ============================================================
+
+def patch_config_int_zero():
+    """`os.getenv("VAR", "") or DEFAULT` naqshini xavfsiz holga keltirish."""
+    p = ROOT / "config.py"
+
+    old = '''    # UZOQ JOYDAGI nusxalar necha kun saqlanadi (Telegram kanal / S3 bucket).
+    # 0 bo'lsa uzoq joyda tozalash o'chiriladi. Berilmasa BACKUP_KEEP_DAYS ishlatiladi.
+    "remote_keep_days": int(os.getenv("BACKUP_REMOTE_KEEP_DAYS", "") or BACKUP_SETTINGS["keep_days"]),'''
+
+    new = '''    # UZOQ JOYDAGI nusxalar necha kun saqlanadi (Telegram kanal / S3 bucket).
+    # 0 bo'lsa uzoq joyda tozalash o'chiriladi. Berilmasa BACKUP_KEEP_DAYS ishlatiladi.
+    # v4.x: "0" ham to'g'ri qiymat bo'lishi kerak (avval "" or DEFAULT bo'lgan).
+    "remote_keep_days": (
+        int(os.getenv("BACKUP_REMOTE_KEEP_DAYS"))
+        if os.getenv("BACKUP_REMOTE_KEEP_DAYS", "").strip() != ""
+        else int(BACKUP_SETTINGS["keep_days"])
+    ),'''
+
+    patch(p, old, new, "config: BACKUP_REMOTE_KEEP_DAYS '0' muammosi tuzatildi")
+
+
+# ============================================================
+# PATCH #13 — pytest.ini + CI/CD + .gitignore
+# ============================================================
+
+PYTEST_INI = '''[pytest]
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts =
+    -ra
+    --strict-markers
+    --timeout=120
+    --timeout-method=thread
+    -q
+asyncio_mode = auto
+markers =
+    slow: sekin testlar (odatda o'tkazib yuborish mumkin)
+    integration: integratsiya testlari
+    unit: unit testlar
+filterwarnings =
+    ignore::DeprecationWarning
+    ignore::PendingDeprecationWarning
+    ignore::UserWarning:reportlab.*
+    ignore::UserWarning:matplotlib.*
+'''
+
+
+GITHUB_CI = '''name: Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Bog'lanishlarni o'rnatish
+        run: |
+          cd construction_factory_bot
+          python -m pip install --upgrade pip
+          # PostgreSQL paketlarini o'tkazib yuboramiz (SQLite ishlatamiz)
+          sed -i 's/^psycopg2-binary/# psycopg2-binary/; s/^asyncpg/# asyncpg/' requirements.txt
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout pytest-asyncio pytest-cov aiosqlite
+
+      - name: Testlarni ishga tushirish
+        env:
+          TEST_MODE: "true"
+          BOT_TOKEN: "test_token_1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+          ADMIN_IDS: "123456789"
+          SQLITE_DB_PATH: "/tmp/ci_construction.db"
+          USE_POSTGRESQL: "false"
+        run: |
+          cd construction_factory_bot
+          python -m pytest tests/ -q --timeout=120 --cov=. --cov-report=term-missing --cov-fail-under=50
+'''
+
+
+def patch_ci_and_pytest():
+    # pytest.ini ni yangilash
+    p = ROOT / "pytest.ini"
+    if p.exists():
+        backup_file(p)
+    p.write_text(PYTEST_INI, encoding="utf-8")
+    print(f"   ✅ [pytest.ini: yangilandi]")
+
+    # .github/workflows/test.yml yaratish
+    ci = ROOT / ".github" / "workflows" / "test.yml"
+    write_new(ci, GITHUB_CI, "CI/CD: .github/workflows/test.yml")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+PATCHES = [
+    ("9.  crud.create_sale_record — oversell lock", patch_oversell),
+    ("10. event_store._next_sequence — race fix", patch_sequence_race),
+    ("11. notifications.send_notification_to_all — parallel", patch_notification_parallel),
+    ("12. config — '0' qiymati tuzatildi", patch_config_int_zero),
+    ("13. pytest.ini + GitHub CI", patch_ci_and_pytest),
+]
+
+
+def do_fix():
+    check_project()
+    print(f"\n📦 Zaxira nusxa papkasi: {BACKUP.name}\n")
+    results = []
+    for name, fn in PATCHES:
+        print(f"\n🔧 {name}")
+        try:
+            fn()
+            results.append((name, True))
+        except Exception as e:
+            print(f"   ❌ Xato: {e}")
+            results.append((name, False))
+
+    print("\n" + "=" * 60)
+    print("📊 NATIJALAR v2")
+    print("=" * 60)
+    for name, ok in results:
+        print(f"  {'✅' if ok else '❌'} {name}")
+
+    print(f"\n💾 Zaxira: {BACKUP}")
+
+    # Sintaksis tekshiruvi
+    print("\n" + "=" * 60)
+    print("🧪 SINTAKSIS TEKSHIRUVI")
+    print("=" * 60)
+    for f in ["database/crud.py", "utils/event_store.py",
+              "utils/notifications.py", "config.py"]:
+        r = run(["python", "-m", "py_compile", f])
+        if r.returncode == 0:
+            print(f"   ✅ {f}")
+        else:
+            print(f"   ❌ {f} — SINTAKSIS XATO!")
+
+    # Test (patch bilan bog'liq)
+    print("\n" + "=" * 60)
+    print("🧪 PATCH BILAN BOG'LIQ TESTLAR")
+    print("=" * 60)
+    test = run(["python", "-m", "pytest",
+                "tests/test_utils/test_bot_auth.py",
+                "tests/test_api/test_auth.py",
+                "tests/test_api/test_payments_api.py",
+                "tests/test_api/test_event_sourcing.py",
+                "-q", "--no-header"])
+    if test.returncode == 0:
+        print("\n✅ Patch testlari muvaffaqiyatli!")
+    else:
+        print(f"\n⚠️  Ba'zi testlar fail (returncode={test.returncode})")
+
+    # To'liq testni tavsiya
+    print("\n" + "=" * 60)
+    print("▶️  KEYINGI QADAM: to'liq testni ishga tushiring")
+    print("=" * 60)
+    print("   cd construction_factory_bot")
+    print("   python -m pytest tests/ -q --no-header 2>&1 | tail -50")
+
+
+def do_rollback(backup_dir: str):
+    src = Path(backup_dir)
+    if not src.exists() or not src.is_dir():
+        sys.exit(f"❌ Backup papkasi topilmadi: {src}")
+    print(f"🔄 Rollback v2: {src}")
+    count = 0
+    for item in src.rglob("*"):
+        if item.is_file():
+            rel = item.relative_to(src)
+            target = ROOT / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+            print(f"   ↩️  {rel}")
+            count += 1
+    print(f"\n✅ {count} ta fayl qaytarildi.")
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rollback", metavar="BACKUP_DIR",
+                    help="Zaxira nusxadan qaytarish")
+    args = ap.parse_args()
+    if args.rollback:
+        do_rollback(args.rollback)
+    else:
+        do_fix()

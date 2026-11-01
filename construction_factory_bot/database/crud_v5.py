@@ -291,8 +291,11 @@ def payment_to_dict(p: models.Payment) -> Dict:
 
 
 def get_daily_payments(db: Session, day: date = None) -> Dict:
-    """Kunlik to'lovlar: naqd/karta/onlayn/nasiya bo'yicha jamlama."""
-    day = day or date.today()
+    """Kunlik to'lovlar: naqd/karta/onlayn/nasiya bo'yicha jamlama.
+
+    `created_at` UTC'da saqlanadi, shuning uchun standart kun ham UTC sanasi.
+    """
+    day = day or datetime.utcnow().date()
     start = datetime.combine(day, datetime.min.time())
     end = datetime.combine(day, datetime.max.time())
     rows = db.query(models.Payment.method, func.sum(models.Payment.amount)).filter(

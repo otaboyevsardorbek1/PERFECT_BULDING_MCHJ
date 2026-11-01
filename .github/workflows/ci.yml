@@ -1,56 +1,72 @@
-# ============================================================
-# 🏗️ Qurilish Korxonasi — CI/CD (TZ: CI/CD bo'limi)
-#
-# Har bir push/PR da:
-#   1. Python backend testlari (pytest, 568+ test)
-#   2. Node.js frontend sintaksis tekshiruvi
-#   3. Docker image build
-# ============================================================
-name: CI
+# .github/workflows/ci.yml
+name: 🚀 CI Pipeline (Build & Test)
 
 on:
   push:
-    branches: [master, main]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [master, main]
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  issues: write # Xatolik yuz berganda Issue ochish uchun
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-backend:
-    name: Python backend testlari
+    name: 🐍 Python Backend Testlari
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: construction_factory_bot
+        working-directory: construction_factory_bot # Papkangizga moslandi
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Repozitoriyani yuklash
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Python 3.13 ni sozlash
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
+          cache: "pip"
 
-      - name: Kutubxonalarni o'rnatish
+      - name: 📦 Kutubxonalarni o'rnatish (PostgreSQL'siz)
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
+          # PostgreSQL paketlarini o'tkazib yuboramiz (SQLite ishlatamiz)
+          sed -i 's/^psycopg2-binary/# psycopg2-binary/; s/^asyncpg/# asyncpg/' requirements.txt
           pip install -r requirements.txt
+          pip install pytest pytest-timeout pytest-asyncio pytest-cov aiosqlite
 
-      - name: Python sintaksis tekshiruvi (barcha fayllar)
+      - name: 🔍 Python sintaksis tekshiruvi
+        run: python -m compileall -q . -x '/(\.git|\.pytest_cache|__pycache__|node_modules)/'
+
+      - name: 🧪 Testlarni ishga tushirish
+        env:
+          TEST_MODE: "true"
+          BOT_TOKEN: "test_token_1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+          ADMIN_IDS: "123456789"
+          SQLITE_DB_PATH: "/tmp/ci_construction.db"
+          USE_POSTGRESQL: "false"
         run: |
-          python -m compileall -q . -x '/(\.git|\.pytest_cache|__pycache__|node_modules)/'
-
-      - name: Testlarni ishga tushirish
-        run: pytest
+          python -m pytest tests/ -q --timeout=120 --cov=. --cov-report=term-missing --cov-fail-under=50
 
   check-web:
-    name: Node.js frontend tekshiruvi
+    name: 🟢 Node.js Frontend Tekshiruvi
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Repozitoriyani yuklash
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: 🟢 Node.js 20 ni sozlash
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Sintaksis tekshiruvi
+      - name: 🔍 Sintaksis tekshiruvi
         run: |
           cd construction_factory_bot/web
           node --check server.js
@@ -58,12 +74,33 @@ jobs:
           node --check public/shop.html 2>/dev/null || true
 
   build-docker:
-    name: Docker build
+    name: 🐳 Docker Image Build
     runs-on: ubuntu-latest
     needs: [test-backend, check-web]
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Repozitoriyani yuklash
+        uses: actions/checkout@v4
 
-      - name: Konteynerni build qilish
+      - name: 🏗️ Konteynerni build qilish
         run: |
           docker build -t construction-factory-bot:ci ./construction_factory_bot
+
+  notify-failure:
+    name: 🚨 Xatolik haqida ogohlantirish
+    needs: [test-backend, check-web, build-docker]
+    if: failure() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitHub Issue yaratish
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueTitle = `🚨 CI Build Failed: Run #${context.runNumber}`;
+            const body = `Build muvaffaqiyatsizlikka uchradi.\n\n- **Commit:** ${context.sha}\n- **Branch:** ${context.ref}\n- **Ishga tushirgan:** @${context.actor}\n\n[Workflow loglarini ko'rish](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: issueTitle,
+              body: body,
+              labels: ['bug', 'ci-failure']
+            });

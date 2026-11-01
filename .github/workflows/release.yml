@@ -1,0 +1,64 @@
+# .github/workflows/release.yml
+name: 🚀 Release & Publish
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  publish-docker:
+    name: 🐳 Docker Hub ga yuklash
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Docker Buildx ni sozlash
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Docker Hub ga kirish
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Image uchun metadata olish
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/construction-factory-bot
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build va Push qilish
+        uses: docker/build-push-action@v5
+        with:
+          context: ./construction_factory_bot
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  publish-npm:
+    name: 📦 NPM ga yuklash (Agar mavjud bo'lsa)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    defaults:
+      run:
+        working-directory: construction_factory_bot/web # Node.js joylashgan joy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org/
+      
+      - name: O'rnatish va Publish qilish
+        run: |
+          if [ -f package.json ]; then
+            npm install
+            npm publish --access public || echo "NPM publish o'tkazib yuborildi"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -117,40 +117,50 @@ async def send_notification_to_all(title: str, message: str,
     success = 0
     failed = 0
     
-    await bot_instance.send_message(
-        chat_id=ADMIN_IDS[0] if ADMIN_IDS else 0,
-        text=f"📢 *Ommaviy bildirishnoma boshlanmoqda...*\n\n"
-             f"*Sarlavha:* {title}\n"
-             f"*Qabul qiluvchilar:* {total} ta",
-        parse_mode=ParseMode.MARKDOWN
-    )
+    if not ADMIN_IDS:
+        logger.error("ADMIN_IDS bo'sh — progress xabari yuborilmadi")
+        # Baribir xodimlarga yuborishni davom ettiramiz (progress ko'rsatmasdan)
+        progress_chat_id = None
+    else:
+        progress_chat_id = ADMIN_IDS[0]
     
-    # Har bir xodimga yuborish
-    for employee in employees:
-        try:
-            await send_notification_to_user(
-                employee.telegram_id,
-                title,
-                message,
-                notification_type
-            )
-            success += 1
-            
-            # Har 10 ta yuborilganda progressni ko'rsatish
-            if success % 10 == 0:
-                progress = (success / total) * 100
-                await bot_instance.send_message(
-                    chat_id=ADMIN_IDS[0] if ADMIN_IDS else 0,
-                    text=f"📊 *Progress:* {success}/{total} ({progress:.1f}%)",
-                    parse_mode=ParseMode.MARKDOWN
+    if progress_chat_id is not None:
+        await bot_instance.send_message(
+            chat_id=progress_chat_id,
+            text=f"📢 *Ommaviy bildirishnoma boshlanmoqda...*\n\n"
+                 f"*Sarlavha:* {title}\n"
+                 f"*Qabul qiluvchilar:* {total} ta",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    # v4.x XAVFSIZLIK: PARALLEL YUBORISH (semaphore bilan).
+    # Avvalgi for-loop har bir xodimga 0.1 sekund kutib yuborardi — 1000
+    # xodim uchun 100 sekund va event loop'ni band qilardi. Endi 20 parallel
+    # so'rov (Telegram limitiga mos) va butun vaqt ~5-10 sekund.
+    sem = asyncio.Semaphore(20)
+    progress_lock = asyncio.Lock()
+
+    async def _send_one(employee) -> bool:
+        if not employee.telegram_id:
+            return False
+        async with sem:
+            try:
+                await send_notification_to_user(
+                    employee.telegram_id,
+                    title,
+                    message,
+                    notification_type,
                 )
-            
-        except Exception as e:
-            logger.error(f"Error sending to employee {employee.id}: {e}")
-            failed += 1
-        
-        # To avoid flooding
-        await asyncio.sleep(0.1)
+                return True
+            except Exception as e:
+                logger.error(f"Error sending to employee {employee.id}: {e}")
+                return False
+
+    results = await asyncio.gather(
+        *[_send_one(e) for e in employees], return_exceptions=False
+    )
+    success = sum(1 for r in results if r)
+    failed = total - success
     
     # Natijalarni adminlarga yuborish
     result_message = (
@@ -274,8 +284,10 @@ async def check_low_stock_notifications() -> int:
     with get_db_session() as db:
         # Yetarli bo'lmagan xom ashyolarni topish
         low_stock_materials = crud.check_low_stock_materials(db)
-        
-        if not low_stock_materials:
+        # TZ (3.1): minimal qoldig'i belgilangan tayyor mahsulotlar ham
+        low_stock_products = crud.get_low_stock_products(db)
+
+        if not low_stock_materials and not low_stock_products:
             return 0
         
         notification_count = 0
@@ -301,24 +313,48 @@ async def check_low_stock_notifications() -> int:
             await send_notification_to_department("Ombor", title, message, "low_stock")
             
             notification_count += 1
-        
-        # Umumiy xabar
-        if len(low_stock_materials) > 3:
-            total_title = f"⚠️ {len(low_stock_materials)} ta xom ashyo tugab qolmoqda"
-            total_message = (
-                f"Diqqat! {len(low_stock_materials)} ta xom ashyo tugab qolmoqda:\n\n"
+
+        # TZ (3.1): tayyor mahsulot minimal qoldig'i bo'yicha ogohlantirish
+        for item in low_stock_products:
+            product = item["product"]
+            title = f"⚠️ Mahsulot zaxirasi kam: {product.name}"
+            message = (
+                f"*{product.name}* mahsuloti minimal qoldiqqa yetdi!\n\n"
+                f"📊 *Joriy qoldiq:* {item['available']:,.0f} {product.unit}\n"
+                f"📉 *Minimal qoldiq:* {item['min_stock']:,.0f} {product.unit}\n\n"
+                f"🚨 *Zarur amallar:*\n"
+                f"1. Ishlab chiqarishni rejalashtiring\n"
+                f"2. Ombordagi qoldiqni tekshiring\n"
+                f"3. Sotuvni vaqtincha cheklashni ko'rib chiqing"
             )
-            
+            await send_notification_to_admins(title, message, "low_stock")
+            await send_notification_to_department("Ombor", title, message, "low_stock")
+            notification_count += 1
+
+        # Umumiy xabar
+        total_low = len(low_stock_materials) + len(low_stock_products)
+        if total_low > 3:
+            total_title = f"⚠️ {total_low} ta zaxira tugab qolmoqda"
+            total_message = (
+                f"Diqqat! {total_low} ta xom ashyo/mahsulot tugab qolmoqda:\n\n"
+            )
+
             for material in low_stock_materials[:5]:  # Faqat 5 tasini ko'rsatish
                 total_message += f"• {material.name}: {material.current_stock}/{material.min_stock} {material.unit}\n"
-            
-            if len(low_stock_materials) > 5:
-                total_message += f"\n... va yana {len(low_stock_materials) - 5} ta\n"
-            
+            for item in low_stock_products[:5]:
+                product = item["product"]
+                total_message += (
+                    f"• {product.name}: {item['available']:,.0f}/"
+                    f"{item['min_stock']:,.0f} {product.unit}\n"
+                )
+
+            if total_low > 10:
+                total_message += f"\n... va yana {total_low - 10} ta\n"
+
             total_message += "\n🔄 Tez orada to'ldirishni rejalashtiring!"
-            
+
             await send_notification_to_admins(total_title, total_message, "low_stock")
-        
+
         return notification_count
 
 async def check_production_notifications() -> int:
@@ -1340,6 +1376,12 @@ async def notification_background_task():
     """Bildirishnoma fon vazifasi"""
     
     manager = NotificationManager()
+    
+    # Birinchi tekshiruvni DARHOL bajaramiz (5 daqiqa kutmаymiz)
+    try:
+        await manager.check_all_notifications()
+    except Exception as _e:
+        logger.warning(f"Boshlang'ich bildirishnoma tekshiruvida xatolik: {_e}")
     
     while True:
         try:

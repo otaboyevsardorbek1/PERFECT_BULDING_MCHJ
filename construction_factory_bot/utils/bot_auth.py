@@ -401,10 +401,10 @@ def check_session_permission(db, telegram_id: int) -> Optional[str]:
     """
     if not is_bot_auth_enabled():
         return None
-    # Eski tizim uzluksizligi: ADMIN_IDS'dagi superuser xodim yozuviga bog'lanmagan
-    # bo'lsa, uni bloklamaymiz (login qilishga imkon yo'q bo'lardi). Xodim yozuvi
-    # mavjud bo'lsa — admin ham oddiy xodim kabi sessiya o'tkazadi.
-    if telegram_id in ADMIN_IDS:
+    # v4.x XAVFSIZLIK: ADMIN_IDS bypass faqat ALLOW_UNLINKED_ADMIN_BYPASS=true
+    # bo'lganda ishlaydi (bootstrap uchun). Production'da admin ham /login qiladi.
+    from config import ALLOW_UNLINKED_ADMIN_BYPASS
+    if telegram_id in ADMIN_IDS and ALLOW_UNLINKED_ADMIN_BYPASS:
         from database import models
         linked = (
             db.query(models.Employee.id)
@@ -412,6 +412,10 @@ def check_session_permission(db, telegram_id: int) -> Optional[str]:
             .first()
         )
         if linked is None:
+            logger.warning(
+                "Admin bypass ishlatildi (ALLOW_UNLINKED_ADMIN_BYPASS=true): "
+                "telegram_id=%s, xodim yozuvi yo'q", telegram_id,
+            )
             return None
     session = get_active_bot_session(db, telegram_id)
     if session is None:
